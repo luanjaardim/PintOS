@@ -17,7 +17,7 @@
 #error TIMER_FREQ <= 1000 recommended
 #endif
 
-static struct list *threads_sleeping = NULL;
+static struct list threads_sleeping;
 
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
@@ -37,6 +37,7 @@ static void real_time_delay (int64_t num, int32_t denom);
 void
 timer_init (void) 
 {
+  list_init(&threads_sleeping);
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 }
@@ -106,13 +107,14 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
-  if(threads_sleeping == NULL) {
-    list_init (threads_sleeping);
-  }
+
   struct thread *t = thread_current();
   t->tick_to_wakeup = start + ticks;
-  list_insert_ordered(threads_sleeping, &t->allelem, cmp_tick_to_wakeup, NULL);
+  list_insert_ordered(&threads_sleeping, &t->allelem, cmp_tick_to_wakeup, NULL);
+
+  enum intr_level old_level = intr_disable ();
   thread_block();
+  intr_set_level (old_level);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -186,22 +188,22 @@ timer_print_stats (void)
 }
 
 static void
-timer_try_unblock_threads() {
-  int64_t current_tick = timer_ticks ();
+timer_try_unblock_threads(int64_t cur_tick) {
   struct list_elem *e;
 
-  if(threads_sleeping != NULL) {
+  for (e = list_begin (&threads_sleeping); e != list_end (&threads_sleeping);
+        e = list_next (e))
+  {
+    struct thread *v = list_entry (e, struct thread, allelem);
+    if((v->tick_to_wakeup != -1) && (v->tick_to_wakeup <= cur_tick)) {
+      list_pop_front(&threads_sleeping);
 
-    for (e = list_begin (threads_sleeping); e != list_end (threads_sleeping);
-         e = list_next (e))
-    {
-      struct thread *v = list_entry (e, struct thread, allelem);
-      if(v->tick_to_wakeup >= current_tick) {
-        list_pop_front(threads_sleeping);
-        thread_unblock(v);
-      } else {
-        break;
-      }
+      enum intr_level old_level = intr_disable ();
+      thread_unblock(v);
+      v->tick_to_wakeup = -1;
+      intr_set_level (old_level);
+    } else {
+      break;
     }
   }
 }
@@ -211,7 +213,7 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
-  timer_try_unblock_threads ();
+  timer_try_unblock_threads (ticks);
   thread_tick ();
 }
 
