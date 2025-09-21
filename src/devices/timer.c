@@ -7,7 +7,7 @@
 #include "threads/interrupt.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
-  
+#include "lib/kernel/list.h"
 /* See [8254] for hardware details of the 8254 timer chip. */
 
 #if TIMER_FREQ < 19
@@ -16,6 +16,8 @@
 #if TIMER_FREQ > 1000
 #error TIMER_FREQ <= 1000 recommended
 #endif
+
+static struct list *threads_sleeping = NULL;
 
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
@@ -84,6 +86,18 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
+/* Returns true if thread's tick_to_wakeup is less than the other, false
+   otherwise. */
+static bool
+cmp_tick_to_wakeup (const struct list_elem *a_, const struct list_elem *b_,
+            void *aux UNUSED)
+{
+  const struct thread *a = list_entry (a_, struct thread, allelem);
+  const struct thread *b = list_entry (b_, struct thread, allelem);
+
+  return a->tick_to_wakeup < b->tick_to_wakeup;
+}
+
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
@@ -92,8 +106,13 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+  if(threads_sleeping == NULL) {
+    list_init (threads_sleeping);
+  }
+  struct thread *t = thread_current();
+  t->tick_to_wakeup = start + ticks;
+  list_insert_ordered(threads_sleeping, &t->allelem, cmp_tick_to_wakeup, NULL);
+  thread_block();
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -165,12 +184,34 @@ timer_print_stats (void)
 {
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
+
+static void
+timer_try_unblock_threads() {
+  int64_t current_tick = timer_ticks ();
+  struct list_elem *e;
+
+  if(threads_sleeping != NULL) {
+
+    for (e = list_begin (threads_sleeping); e != list_end (threads_sleeping);
+         e = list_next (e))
+    {
+      struct thread *v = list_entry (e, struct thread, allelem);
+      if(v->tick_to_wakeup >= current_tick) {
+        list_pop_front(threads_sleeping);
+        thread_unblock(v);
+      } else {
+        break;
+      }
+    }
+  }
+}
 
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+  timer_try_unblock_threads ();
   thread_tick ();
 }
 
