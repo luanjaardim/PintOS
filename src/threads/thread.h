@@ -88,11 +88,17 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
+    int original_priority;
     int64_t tick_to_wakeup;
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
+
+    /* List of acquired locks */
+    struct list locks;
+    /* The lock that this thread is currently waiting for */
+    struct lock *waiting_lock;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -119,6 +125,8 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);
 void thread_unblock (struct thread *);
+void schedule_on_high_priority(struct thread *t);
+void update_priority(struct thread *t);
 
 struct thread *thread_current (void);
 tid_t thread_tid (void);

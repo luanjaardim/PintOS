@@ -201,14 +201,7 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
-  struct thread *cur = thread_current();
-  if(t->priority > cur->priority) {
-    enum intr_level old = intr_disable();
-    cur->status = THREAD_READY;
-    list_insert_ordered(&ready_list, &cur->elem, ord_by_priority, NULL);
-    schedule ();
-    intr_set_level(old);
-  }
+  schedule_on_high_priority (t);
 
   return tid;
 }
@@ -346,8 +339,9 @@ thread_set_priority (int new_priority)
 {
   struct thread *cur = thread_current ();
   int prev_priority = cur->priority;
-  cur->priority = new_priority;
-  if(prev_priority > new_priority) {
+  cur->original_priority = new_priority;
+  update_priority(cur);
+  if(prev_priority > cur->priority) {
     enum intr_level old = intr_disable();
     cur->status = THREAD_READY;
     list_insert_ordered(&ready_list, &cur->elem, ord_by_priority, NULL);
@@ -480,6 +474,9 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->original_priority = priority;
+  list_init(&t->locks);
+  t->waiting_lock = NULL;
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
@@ -581,6 +578,36 @@ schedule (void)
   if (cur != next)
     prev = switch_threads (cur, next);
   thread_schedule_tail (prev);
+}
+
+void schedule_on_high_priority(struct thread *t) {
+  if(t != NULL) {
+    struct thread *cur = thread_current();
+    if(t->priority > cur->priority) {
+      enum intr_level old = intr_disable();
+      cur->status = THREAD_READY;
+      list_insert_ordered(&ready_list, &cur->elem, ord_by_priority, NULL);
+      schedule ();
+      intr_set_level(old);
+    }
+  }
+}
+
+void update_priority(struct thread *t) {
+  struct list_elem *e;
+  uint64_t higher_priority = t->original_priority;
+  for (e = list_begin (&t->locks); e != list_end (&t->locks);
+       e = list_next (e))
+    {
+      struct lock *lock = list_entry (e, struct lock, elem);
+      if(!list_empty(&lock->semaphore.waiters)) {
+        struct thread *t2 = list_entry (list_front(&lock->semaphore.waiters), struct thread, elem);
+        // Maybe i do not need this line
+        if(t != t2) update_priority(t2);
+        higher_priority = higher_priority < t2->priority ? t2->priority : higher_priority;
+      }
+    }
+  t->priority = higher_priority;
 }
 
 /* Returns a tid to use for a new thread. */
