@@ -599,9 +599,9 @@ void update_priority(struct thread *t) {
   for (e = list_begin (&t->locks); e != list_end (&t->locks);
        e = list_next (e))
     {
-      struct lock *lock = list_entry (e, struct lock, elem);
-      if(!list_empty(&lock->semaphore.waiters)) {
-        struct thread *t2 = list_entry (list_front(&lock->semaphore.waiters), struct thread, elem);
+      struct semaphore *sema = list_entry (e, struct semaphore, elem);
+      if(!list_empty(&sema->waiters)) {
+        struct thread *t2 = list_entry (list_front(&sema->waiters), struct thread, elem);
         // Maybe i do not need this line
         if(t != t2) update_priority(t2);
         higher_priority = higher_priority < t2->priority ? t2->priority : higher_priority;

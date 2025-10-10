@@ -98,7 +98,7 @@ struct thread
     /* List of acquired locks */
     struct list locks;
     /* The lock that this thread is currently waiting for */
-    struct lock *waiting_lock;
+    struct semaphore *waiting_lock;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
