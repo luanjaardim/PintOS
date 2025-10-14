@@ -17,6 +17,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "devices/timer.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -88,7 +89,8 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  return -1;
+  printf("%s\n", thread_current()->name);
+  timer_sleep(2 * TIMER_FREQ);
 }
 
 /* Free the current process's resources. */
@@ -195,7 +197,7 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp);
+static bool setup_stack (const char *cmd_args, void **esp);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
@@ -206,7 +208,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
 bool
-load (const char *file_name, void (**eip) (void), void **esp) 
+load (const char *params, void (**eip) (void), void **esp) 
 {
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
@@ -215,6 +217,12 @@ load (const char *file_name, void (**eip) (void), void **esp)
   bool success = false;
   int i;
 
+  int len = 0;
+  while(params[len] != ' ' && params[len] != '\0') len++;
+  char program_name[len+1];
+  memcpy(program_name, params, len);
+  memset(program_name + len, 0, 1);
+
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL) 
@@ -222,10 +230,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  file = filesys_open (file_name);
+  file = filesys_open (program_name);
   if (file == NULL) 
     {
-      printf ("load: %s: open failed\n", file_name);
+      printf ("load: %s: open failed\n", program_name);
       goto done; 
     }
 
@@ -238,7 +246,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
       || ehdr.e_phentsize != sizeof (struct Elf32_Phdr)
       || ehdr.e_phnum > 1024) 
     {
-      printf ("load: %s: error loading executable\n", file_name);
+      printf ("load: %s: error loading executable\n", program_name);
       goto done; 
     }
 
@@ -302,7 +310,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp))
+  if (!setup_stack (params, esp))
     goto done;
 
   /* Start address. */
@@ -427,7 +435,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
-setup_stack (void **esp) 
+setup_stack (const char *cmd_args, void **esp) 
 {
   uint8_t *kpage;
   bool success = false;
@@ -441,6 +449,57 @@ setup_stack (void **esp)
       else
         palloc_free_page (kpage);
     }
+
+  printf("here %d: %s\n",strlen(cmd_args) , cmd_args);
+  // test with spaces at the end and at the beginning
+
+  bool reading_parameter = true;
+  int end = -1, len = strlen(cmd_args);
+  // at maximum there will be one char by arg separated by one space each
+  char **addresses[len/2];
+  char *begin = NULL;
+  int cur_arg_adress_index = 0;
+  end = len-1;
+
+  for(int i = end-1; i >= 0; i--) {
+    // printf("%c: %d\n", cmd_args[i], cmd_args[i]);
+    if(cmd_args[i] == ' ' || i == 0) {
+      if(reading_parameter) {
+        if(i == 0) {
+          len = (end - i) + 2;
+          begin = cmd_args + i;
+        } else {
+          len = (end - i) + 1;
+          begin = cmd_args + i + 1;
+        }
+        // write the parameter to esp here.
+        *esp -= len;
+        printf("end: %d, i: %d, len: %d\n", end, i, len);
+        memcpy(*esp, begin, len - 1);
+        esp[len] = 0; // end of the parameter string
+        addresses[cur_arg_adress_index++] = *esp;
+        printf("wrote to esp:%s\n", *esp);
+
+        // Align to 4 bytes
+        int rem = (len%4);
+        if (rem != 0) {
+          printf("rem: %d\n", rem);
+          *esp -= 4 - rem;
+          memset(*esp, 0, 4 - rem);
+        }
+      }
+      reading_parameter = false;
+    } else {
+      if(!reading_parameter) {
+        end = i;
+        reading_parameter = true;
+      }
+    }
+  }
+  *esp -= 4;
+  memset(*esp, 0, 4); // NULL pointer for the end of argv
+  hex_dump((uintptr_t) *esp, *esp, 64, true);
+
   return success;
 }
 
