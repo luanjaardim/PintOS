@@ -462,7 +462,6 @@ setup_stack (const char *cmd_args, void **esp)
   end = len-1;
 
   for(int i = end-1; i >= 0; i--) {
-    // printf("%c: %d\n", cmd_args[i], cmd_args[i]);
     if(cmd_args[i] == ' ' || i == 0) {
       if(reading_parameter) {
         if(i == 0) {
@@ -474,16 +473,13 @@ setup_stack (const char *cmd_args, void **esp)
         }
         // write the parameter to esp here.
         *esp -= len;
-        printf("end: %d, i: %d, len: %d\n", end, i, len);
         memcpy(*esp, begin, len - 1);
         esp[len] = 0; // end of the parameter string
         addresses[cur_arg_adress_index++] = *esp;
-        printf("wrote to esp:%s\n", *esp);
 
         // Align to 4 bytes
         int rem = (len%4);
         if (rem != 0) {
-          printf("rem: %d\n", rem);
           *esp -= 4 - rem;
           memset(*esp, 0, 4 - rem);
         }
@@ -497,8 +493,21 @@ setup_stack (const char *cmd_args, void **esp)
     }
   }
   *esp -= 4;
-  memset(*esp, 0, 4); // NULL pointer for the end of argv
-  hex_dump((uintptr_t) *esp, *esp, 64, true);
+  memset(*esp, 0, 4); // 4 bytes with 0
+  for(int i = cur_arg_adress_index-1; i >= 0; i--) {
+    *esp -= sizeof(char *);
+    memcpy(*esp, addresses + i, sizeof(char *));
+  }
+  char **argv_0_adress = *esp;
+  *esp -= sizeof(char **);
+  memcpy(*esp, argv_0_adress, sizeof(char **));
+  *esp -= 4;
+  memset(*esp, cur_arg_adress_index, 1);
+  memset((*esp)+1, 0, 3);
+  *esp -= sizeof(void *);
+  memset(*esp, 0, sizeof(void *));
+
+  hex_dump((uintptr_t) *esp, *esp, 128, true);
 
   return success;
 }
