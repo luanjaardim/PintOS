@@ -39,8 +39,14 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  int len = 0;
+  while(file_name[len] != '\0' && file_name[len] != ' ') len++;
+  char thread_name[len+1];
+  memcpy(thread_name, file_name, len);
+  thread_name[len] = 0;
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (thread_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
@@ -89,7 +95,6 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  printf("%s\n", thread_current()->name);
   timer_sleep(2 * TIMER_FREQ);
 }
 
@@ -449,8 +454,6 @@ setup_stack (const char *cmd_args, void **esp)
       else
         palloc_free_page (kpage);
     }
-
-  printf("here %d: %s\n",strlen(cmd_args) , cmd_args);
   // test with spaces at the end and at the beginning
 
   bool reading_parameter = true;
@@ -509,8 +512,7 @@ setup_stack (const char *cmd_args, void **esp)
   memset((*esp)+1, 0, 3);
   *esp -= sizeof(void *);
   memset(*esp, 0, sizeof(void *));
-
-  hex_dump((uintptr_t) *esp, *esp, 128, true);
+  // hex_dump((uintptr_t) *esp, *esp, 128, true);
 
   return success;
 }
