@@ -454,7 +454,7 @@ setup_stack (const char *cmd_args, void **esp)
   // test with spaces at the end and at the beginning
 
   bool reading_parameter = true;
-  int end = -1, len = strlen(cmd_args);
+  int end = -1, len = strlen(cmd_args), total_len = 0;
   // at maximum there will be one char by arg separated by one space each
   char **addresses[len/2];
   char *begin = NULL;
@@ -473,15 +473,18 @@ setup_stack (const char *cmd_args, void **esp)
         }
         // write the parameter to esp here.
         *esp -= len;
-        memcpy(*esp, begin, len - 1);
+        total_len += len;
         esp[len] = 0; // end of the parameter string
+        memcpy(*esp, begin, len - 1);
         addresses[cur_arg_adress_index++] = *esp;
 
-        // Align to 4 bytes
-        int rem = (len%4);
-        if (rem != 0) {
-          *esp -= 4 - rem;
-          memset(*esp, 0, 4 - rem);
+        // // Align to 4 bytes
+        if (i == 0) {
+          int rem = (total_len%4);
+          if (rem != 0) {
+            *esp -= 4 - rem;
+            memset(*esp, 0, 4 - rem);
+          } 
         }
       }
       reading_parameter = false;
@@ -494,13 +497,13 @@ setup_stack (const char *cmd_args, void **esp)
   }
   *esp -= 4;
   memset(*esp, 0, 4); // 4 bytes with 0
-  for(int i = cur_arg_adress_index-1; i >= 0; i--) {
+  for(int i = 0; i < cur_arg_adress_index; i++) {
     *esp -= sizeof(char *);
     memcpy(*esp, addresses + i, sizeof(char *));
   }
   char **argv_0_adress = *esp;
   *esp -= sizeof(char **);
-  memcpy(*esp, argv_0_adress, sizeof(char **));
+  memcpy(*esp, &argv_0_adress, sizeof(char **));
   *esp -= 4;
   memset(*esp, cur_arg_adress_index, 1);
   memset((*esp)+1, 0, 3);
