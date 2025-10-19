@@ -2,6 +2,13 @@
 #define USERPROG_PROCESS_H
 
 #include "threads/thread.h"
+#include "filesys/file.h"
+
+struct file_desc {
+    uint32_t id;
+    struct list_elem e;
+    struct file *f;
+};
 
 tid_t process_execute (const char *file_name);
 int process_wait (tid_t);
