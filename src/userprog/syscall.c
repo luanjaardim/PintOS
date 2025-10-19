@@ -18,6 +18,8 @@ bool sys_remove(const char *file);
 int sys_open(const char *file);
 void sys_close(int fd);
 uint32_t sys_write(int fd, void *buffer, uint32_t size);
+uint32_t sys_read(int fd, void *buffer, uint32_t size);
+uint32_t sys_filesize(int fd);
 void sys_exit(uint32_t code);
 struct file_desc *get_file_desc(struct thread *t, int id);
 static int memread_user (void *src, void *dst, size_t bytes);
@@ -78,8 +80,11 @@ syscall_handler (struct intr_frame *f)
     {
       int fd;
       memread_user(f->esp + 4, &fd, sizeof(fd));
-      sys_close(fd);
+      if(fd >= 0 && fd < 3) sys_exit(-1);
+      else sys_close(fd);
+      break;
     }
+  case SYS_READ:
   case SYS_WRITE:
     {
       int fd;
@@ -89,7 +94,14 @@ syscall_handler (struct intr_frame *f)
       memread_user(f->esp + 8, &buffer, sizeof(void *));
       memread_user(f->esp + 12, &size, sizeof(unsigned));
 
-      f->eax = sys_write(fd, buffer, size);
+      f->eax = sys_code == SYS_WRITE ? sys_write(fd, buffer, size) : sys_read(fd, buffer, size);
+      break;
+    }
+  case SYS_FILESIZE:
+    {
+      int fd;
+      memread_user(f->esp + 4, &fd, sizeof(int));
+      f->eax = sys_filesize(fd);
       break;
     }
   default:
@@ -153,15 +165,49 @@ void sys_close(int fd) {
 uint32_t sys_write(int fd, void *buffer, uint32_t size) {
   check_user(buffer);
   check_user(buffer + size - 1);
+  int len;
 
   if(fd == STDOUT_FILENO) {
     putbuf(buffer, size);
-    return size;
+    len = size;
   } else {
-    printf("SYS_WRTIE ON FILES: TODO!\n");
-    thread_exit();
-    return 0;
+    struct file_desc *desc =  get_file_desc(thread_current(), fd);
+    if(desc && desc->f) {
+      lock_acquire(&filesys_lock);
+      len = file_write(desc->f, buffer, size);
+      lock_release(&filesys_lock);
+    } else sys_exit(-1);
   }
+  return len;
+}
+
+uint32_t sys_read(int fd, void *buffer, uint32_t size) {
+  check_user(buffer);
+  check_user(buffer + size - 1);
+  int len;
+
+  if(fd == 1 || fd == 2) sys_exit(-1);
+  struct file_desc *desc =  get_file_desc(thread_current(), fd);
+  if(desc && desc->f) {
+    lock_acquire(&filesys_lock);
+    len = file_read(desc->f, buffer, size);
+    lock_release(&filesys_lock);
+  } else sys_exit(-1);
+
+  return len;
+}
+
+uint32_t sys_filesize(int fd) {
+  int len;
+  if(fd >= 0 && fd <= 2) return -1;
+  struct file_desc *desc = get_file_desc(thread_current(), fd);
+  if(desc && desc->f) {
+    lock_acquire(&filesys_lock);
+    len = file_length(desc->f);
+    lock_release(&filesys_lock);
+  } else sys_exit(-1);
+
+  return len;
 }
 
 // TODO: if exit with a thread we need to release the locks its holding
