@@ -199,7 +199,7 @@ uint32_t sys_read(int fd, void *buffer, uint32_t size) {
 
 uint32_t sys_filesize(int fd) {
   int len;
-  if(fd >= 0 && fd <= 2) return -1;
+  if(fd >= 0 && fd <= 2) sys_exit(-1);
   struct file_desc *desc = get_file_desc(thread_current(), fd);
   if(desc && desc->f) {
     lock_acquire(&filesys_lock);
