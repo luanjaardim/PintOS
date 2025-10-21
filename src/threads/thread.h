@@ -82,16 +82,19 @@ typedef int tid_t;
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
 
+#define USERPROG
 #ifdef USERPROG
 struct process_defs {
-   uint32_t *pagedir;                  /* Page directory. */
    const char *cmd_line;
    struct list file_descriptors;      /* List of opened file descriptors */
    struct list children;              /* Children processes */
    struct thread *parent;
-   struct lock wait_for;
-   struct lock initializing;
+   struct semaphore wait_for;
+   struct semaphore initializing;
    bool exited;
+   bool parent_already_waiting;
+   struct list_elem e;
+   tid_t tid;
 };
 #endif
 
@@ -111,7 +114,8 @@ struct thread
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
-    struct process_defs pd;
+    struct process_defs *pd;
+    uint32_t *pagedir;                  /* Page directory. */
 #endif
 
     /* Owned by thread.c. */

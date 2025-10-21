@@ -19,6 +19,7 @@
 #include "threads/vaddr.h"
 #include "devices/timer.h"
 #include "lib/kernel/list.h"
+#include "threads/synch.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -46,14 +47,38 @@ process_execute (const char *file_name)
   memcpy(thread_name, file_name, len);
   thread_name[len] = 0;
 
-  struct parent_and_cmd_line *arg = malloc(sizeof(struct parent_and_cmd_line));
-  arg->parent = thread_current();
-  arg->cmd_line = fn_copy;
+  struct process_defs *pd = palloc_get_page(0);
+  pd->tid = -1;
+  pd->parent = thread_current();
+  pd->cmd_line = fn_copy;
+  pd->exited = false;
+  pd->parent_already_waiting = false;
+  list_init(&pd->children);
+  list_init(&pd->file_descriptors);
+  sema_init(&pd->initializing, 0);
+  sema_init(&pd->wait_for, 0);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (thread_name, PRI_DEFAULT, start_process, (void *)arg);
+  tid = thread_create (thread_name, PRI_DEFAULT, start_process, (void *)pd);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
+
+  printf("here\n");
+  sema_down(&pd->initializing);
+  printf("here2: %p %d %d\n", pd, pd->tid, tid);
+
+  struct thread *cur = thread_current();
+  // For threads that were created with the process_execute function
+  if(cur->pd == NULL) {
+    printf("oh boy\n");
+    cur->pd = palloc_get_page(0);
+    cur->pd->tid = cur->tid;
+    list_init(&cur->pd->children);
+    cur->pd->exited = false;
+  }
+  list_push_back(&cur->pd->children, &pd->e);
+  printf("appended child %d\n", pd->tid);
+
   return tid;
 }
 
@@ -62,12 +87,12 @@ process_execute (const char *file_name)
 static void
 start_process (void *arg_)
 {
-  struct parent_and_cmd_line *arg = arg_;
+  struct process_defs *arg = arg_;
   struct intr_frame if_;
   bool success;
-  thread_current()->pd.parent = arg->parent;
+  struct thread *cur = thread_current();
+  cur->pd = arg;
   const char *cmd_line = arg->cmd_line;
-  free(arg); // Freeing memory alocated at process_execute
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -78,8 +103,17 @@ start_process (void *arg_)
 
   /* If load failed, quit. */
   palloc_free_page (cmd_line);
-  if (!success)
+
+  cur->pd->tid = success ? cur->tid : TID_ERROR;
+  printf("ola\n");
+  sema_up(&cur->pd->initializing); // end of initialization
+
+  if (!success) {
+    palloc_free_page(arg);
     thread_exit ();
+  }
+
+  printf("succesfull initialization, parent %p\n", cur->pd->parent);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -101,9 +135,30 @@ start_process (void *arg_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  timer_sleep(2 * TIMER_FREQ);
+  struct thread *cur = thread_current();
+  struct process_defs *child_pd = NULL;
+
+  struct list_elem *elem;
+  printf("im here %s %d\n", cur->name, cur->pd == NULL);
+  for (elem = list_begin (&cur->pd->children); elem != list_end (&cur->pd->children);
+       elem = list_next (elem))
+      {
+        struct process_defs *pd = list_entry(elem, struct process_defs, e);
+        printf("here %d\n", pd->tid);
+        if(pd && pd->tid == child_tid) {
+          child_pd = pd;
+        }
+      }
+  if(child_pd == NULL) return -1;
+
+  printf("wait ended\n");
+  sema_down(&child_pd->wait_for); // end of the execution of a child
+  ASSERT(child_pd->exited);
+  list_remove(&child_pd->e);
+  palloc_free_page(child_pd);
+
 }
 
 /* Free the current process's resources. */
@@ -113,9 +168,20 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
+  // close every opened files
+
+
+  // exit and let the children alive
+
+
+  // if it has no parent dealocate and die
+  printf("at exit %s %p %d %p\n", cur->name, cur->pd, cur->pd->tid, cur->pd->parent);
+  sema_up(&cur->pd->wait_for); // end of execution, unblock parent
+  cur->pd->exited = true;
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
-  pd = cur->pd.pagedir;
+  pd = cur->pagedir;
   if (pd != NULL) 
     {
       /* Correct ordering here is crucial.  We must set
@@ -125,10 +191,11 @@ process_exit (void)
          directory before destroying the process's page
          directory, or our active page directory will be one
          that's been freed (and cleared). */
-      cur->pd.pagedir = NULL;
+      cur->pagedir = NULL;
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+  printf("aqui: %p %d\n", cur->pd, cur->pd->tid);
 }
 
 /* Sets up the CPU for running user code in the current
@@ -140,7 +207,7 @@ process_activate (void)
   struct thread *t = thread_current ();
 
   /* Activate thread's page tables. */
-  pagedir_activate (t->pd.pagedir);
+  pagedir_activate (t->pagedir);
 
   /* Set thread's kernel stack for use in processing
      interrupts. */
@@ -237,8 +304,8 @@ load (const char *params, void (**eip) (void), void **esp)
   memset(program_name + len, 0, 1);
 
   /* Allocate and activate page directory. */
-  t->pd.pagedir = pagedir_create ();
-  if (t->pd.pagedir == NULL)
+  t->pagedir = pagedir_create ();
+  if (t->pagedir == NULL)
     goto done;
   process_activate ();
 
@@ -541,6 +608,6 @@ install_page (void *upage, void *kpage, bool writable)
 
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
-  return (pagedir_get_page (t->pd.pagedir, upage) == NULL
-          && pagedir_set_page (t->pd.pagedir, upage, kpage, writable));
+  return (pagedir_get_page (t->pagedir, upage) == NULL
+          && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }

@@ -128,7 +128,7 @@ thread_tick (void)
   if (t == idle_thread)
     idle_ticks++;
 #ifdef USERPROG
-  else if (t->pd.pagedir != NULL)
+  else if (t->pagedir != NULL)
     user_ticks++;
 #endif
   else
@@ -291,8 +291,15 @@ thread_exit (void)
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
-  list_remove (&thread_current()->allelem);
-  thread_current ()->status = THREAD_DYING;
+  struct thread *t = thread_current();
+  #ifdef USERPROG
+  if(t->pd != NULL && t->pd->parent == NULL) {
+    printf("pqp %s\n", t->name);
+    palloc_free_page(t->pd);
+  }
+  #endif
+  list_remove (&t->allelem);
+  t->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();
 }
@@ -465,14 +472,8 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
   #ifdef USERPROG
-    t->pd.pagedir = NULL;
-    t->pd.parent = NULL;
-    t->pd.exited = false;
-    t->pd.cmd_line = NULL;
-    list_init(&t->pd.children);
-    list_init(&t->pd.file_descriptors);
-    lock_init(&t->pd.initializing);
-    lock_init(&t->pd.wait_for);
+    t->pagedir = NULL;
+    t->pd = NULL;
   #endif
 
   old_level = intr_disable ();

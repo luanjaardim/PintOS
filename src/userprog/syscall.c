@@ -147,7 +147,7 @@ int open_syscall(const char *file) {
     return -1;
   }
   fd->f = f;
-  struct list *fd_list = &thread_current()->pd.file_descriptors;
+  struct list *fd_list = &thread_current()->pd->file_descriptors;
   if (list_empty(fd_list)) {
     fd->id = 3;
   } else {
@@ -235,7 +235,7 @@ void exit_syscall(uint32_t code) {
 
 struct file_desc *get_file_desc(struct thread *t, int id) {
   struct list_elem *elem;
-  for (elem = list_begin (&t->pd.file_descriptors); elem != list_end (&t->pd.file_descriptors);
+  for (elem = list_begin (&t->pd->file_descriptors); elem != list_end (&t->pd->file_descriptors);
        elem = list_next (elem))
       {
         struct file_desc *fd = list_entry(elem, struct file_desc, e);

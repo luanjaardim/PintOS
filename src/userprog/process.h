@@ -10,11 +10,6 @@ struct file_desc {
     struct file *f;
 };
 
-struct parent_and_cmd_line {
-    const char *cmd_line;
-    struct thread *parent;
-};
-
 tid_t process_execute (const char *file_name);
 int process_wait (tid_t);
 void process_exit (void);
