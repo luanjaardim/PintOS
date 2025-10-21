@@ -18,6 +18,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "devices/timer.h"
+#include "lib/kernel/list.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -45,8 +46,12 @@ process_execute (const char *file_name)
   memcpy(thread_name, file_name, len);
   thread_name[len] = 0;
 
+  struct parent_and_cmd_line *arg = malloc(sizeof(struct parent_and_cmd_line));
+  arg->parent = thread_current();
+  arg->cmd_line = fn_copy;
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (thread_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (thread_name, PRI_DEFAULT, start_process, (void *)arg);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
@@ -55,22 +60,25 @@ process_execute (const char *file_name)
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *arg_)
 {
-  char *file_name = file_name_;
+  struct parent_and_cmd_line *arg = arg_;
   struct intr_frame if_;
   bool success;
+  thread_current()->pd.parent = arg->parent;
+  const char *cmd_line = arg->cmd_line;
+  free(arg); // Freeing memory alocated at process_execute
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+  success = load (cmd_line, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
-  palloc_free_page (file_name);
-  if (!success) 
+  palloc_free_page (cmd_line);
+  if (!success)
     thread_exit ();
 
   /* Start the user process by simulating a return from an
@@ -107,7 +115,7 @@ process_exit (void)
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
-  pd = cur->pagedir;
+  pd = cur->pd.pagedir;
   if (pd != NULL) 
     {
       /* Correct ordering here is crucial.  We must set
@@ -117,7 +125,7 @@ process_exit (void)
          directory before destroying the process's page
          directory, or our active page directory will be one
          that's been freed (and cleared). */
-      cur->pagedir = NULL;
+      cur->pd.pagedir = NULL;
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
@@ -132,7 +140,7 @@ process_activate (void)
   struct thread *t = thread_current ();
 
   /* Activate thread's page tables. */
-  pagedir_activate (t->pagedir);
+  pagedir_activate (t->pd.pagedir);
 
   /* Set thread's kernel stack for use in processing
      interrupts. */
@@ -229,8 +237,8 @@ load (const char *params, void (**eip) (void), void **esp)
   memset(program_name + len, 0, 1);
 
   /* Allocate and activate page directory. */
-  t->pagedir = pagedir_create ();
-  if (t->pagedir == NULL) 
+  t->pd.pagedir = pagedir_create ();
+  if (t->pd.pagedir == NULL)
     goto done;
   process_activate ();
 
@@ -533,6 +541,6 @@ install_page (void *upage, void *kpage, bool writable)
 
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
-  return (pagedir_get_page (t->pagedir, upage) == NULL
-          && pagedir_set_page (t->pagedir, upage, kpage, writable));
+  return (pagedir_get_page (t->pd.pagedir, upage) == NULL
+          && pagedir_set_page (t->pd.pagedir, upage, kpage, writable));
 }

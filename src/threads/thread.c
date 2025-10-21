@@ -128,7 +128,7 @@ thread_tick (void)
   if (t == idle_thread)
     idle_ticks++;
 #ifdef USERPROG
-  else if (t->pagedir != NULL)
+  else if (t->pd.pagedir != NULL)
     user_ticks++;
 #endif
   else
@@ -464,7 +464,16 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
-  list_init(&t->file_descriptors);
+  #ifdef USERPROG
+    t->pd.pagedir = NULL;
+    t->pd.parent = NULL;
+    t->pd.exited = false;
+    t->pd.cmd_line = NULL;
+    list_init(&t->pd.children);
+    list_init(&t->pd.file_descriptors);
+    lock_init(&t->pd.initializing);
+    lock_init(&t->pd.wait_for);
+  #endif
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
