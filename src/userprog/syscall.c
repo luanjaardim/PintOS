@@ -11,6 +11,7 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "userprog/process.h"
+#include "userprog/pagedir.h"
 
 static void syscall_handler (struct intr_frame *);
 bool create_syscall(const char *file, unsigned initial_size);
@@ -20,6 +21,8 @@ void close_syscall(int fd);
 int write_syscall(int fd, void *buffer, uint32_t size);
 int read_syscall(int fd, void *buffer, uint32_t size);
 int filesize_syscall(int fd);
+void seek_syscall(int fd, unsigned position);
+unsigned tell_syscall(int fd);
 tid_t exec_syscall(const char *command_line_arguments);
 void exit_syscall(uint32_t code);
 struct file_desc *get_file_desc(struct thread *t, int id);
@@ -109,6 +112,22 @@ syscall_handler (struct intr_frame *f)
       int fd;
       read_from_user(f->esp + 4, &fd, sizeof(int));
       f->eax = filesize_syscall(fd);
+      break;
+    }
+  case SYS_TELL:
+    {
+      int fd;
+      read_from_user(f->esp + 4, &fd, sizeof(int));
+      f->eax = tell_syscall(fd);
+      break;
+    }
+  case SYS_SEEK:
+    {
+      int fd;
+      unsigned position;
+      read_from_user(f->esp + 4, &fd, sizeof(int));
+      read_from_user(f->esp + 8, &position, sizeof(unsigned));
+      seek_syscall(fd, position);
       break;
     }
   case SYS_EXEC:
@@ -224,11 +243,26 @@ int filesize_syscall(int fd) {
   return len;
 }
 
-int wait_syscall(tid_t tid) {
+void seek_syscall(int fd, unsigned position) {
+  struct file_desc *desc = get_file_desc(thread_current(), fd);
+  if(desc == NULL) exit_syscall(-1);
+  lock_acquire(&filesys_lock);
+  file_seek(desc->f, position);
+  lock_release(&filesys_lock);
+}
+
+unsigned tell_syscall(int fd) {
+  struct file_desc *desc = get_file_desc(thread_current(), fd);
+  if(desc == NULL) exit_syscall(-1);
+  lock_acquire(&filesys_lock);
+  unsigned pos = file_tell(desc->f);
+  lock_release(&filesys_lock);
+  return pos;
 }
 
 tid_t exec_syscall(const char *command_line_arguments) {
   tid_t tid;
+  is_user_loc(command_line_arguments);
   tid = process_execute(command_line_arguments);
   return tid;
 }
@@ -263,7 +297,10 @@ static void is_user_loc (const void *uaddr) {
 
 static int get_user (const uint8_t *uaddr) {
   // check for valid pointer
-  if(((void*)uaddr > PHYS_BASE) || ((void*)uaddr < (void*)0x08048000)) {
+  if(((void*)uaddr >= PHYS_BASE) || ((void*)uaddr <= (void*)0x08048000)) {
+    return -1;
+  }
+  if(pagedir_get_page(thread_current()->pagedir, uaddr) == NULL) {
     return -1;
   }
 
