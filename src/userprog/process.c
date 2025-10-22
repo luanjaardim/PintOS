@@ -52,7 +52,7 @@ process_execute (const char *file_name)
   pd->parent = thread_current();
   pd->cmd_line = fn_copy;
   pd->exited = false;
-  pd->parent_already_waiting = false;
+  pd->exit_code = 0;
   list_init(&pd->children);
   list_init(&pd->file_descriptors);
   sema_init(&pd->initializing, 0);
@@ -63,21 +63,17 @@ process_execute (const char *file_name)
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
 
-  printf("here\n");
   sema_down(&pd->initializing);
-  printf("here2: %p %d %d\n", pd, pd->tid, tid);
 
   struct thread *cur = thread_current();
   // For threads that were created with the process_execute function
   if(cur->pd == NULL) {
-    printf("oh boy\n");
     cur->pd = palloc_get_page(0);
     cur->pd->tid = cur->tid;
     list_init(&cur->pd->children);
     cur->pd->exited = false;
   }
   list_push_back(&cur->pd->children, &pd->e);
-  printf("appended child %d\n", pd->tid);
 
   return tid;
 }
@@ -105,15 +101,12 @@ start_process (void *arg_)
   palloc_free_page (cmd_line);
 
   cur->pd->tid = success ? cur->tid : TID_ERROR;
-  printf("ola\n");
   sema_up(&cur->pd->initializing); // end of initialization
 
   if (!success) {
     palloc_free_page(arg);
     thread_exit ();
   }
-
-  printf("succesfull initialization, parent %p\n", cur->pd->parent);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -141,47 +134,58 @@ process_wait (tid_t child_tid)
   struct process_defs *child_pd = NULL;
 
   struct list_elem *elem;
-  printf("im here %s %d\n", cur->name, cur->pd == NULL);
   for (elem = list_begin (&cur->pd->children); elem != list_end (&cur->pd->children);
        elem = list_next (elem))
       {
         struct process_defs *pd = list_entry(elem, struct process_defs, e);
-        printf("here %d\n", pd->tid);
         if(pd && pd->tid == child_tid) {
           child_pd = pd;
         }
       }
   if(child_pd == NULL) return -1;
 
-  printf("wait ended\n");
   sema_down(&child_pd->wait_for); // end of the execution of a child
   ASSERT(child_pd->exited);
+  int exit_code = child_pd->exit_code;
   list_remove(&child_pd->e);
   palloc_free_page(child_pd);
 
+  // return of child exit code
+  return exit_code;
 }
 
 /* Free the current process's resources. */
 void
 process_exit (void)
 {
-  struct thread *cur = thread_current ();
+  struct thread *t = thread_current ();
   uint32_t *pd;
 
   // close every opened files
+  struct list_elem *elem = list_begin (&t->pd->file_descriptors);
+  int len = list_size(&t->pd->file_descriptors);
+  while(len--) {
+    struct file_desc *fd = list_entry(elem, struct file_desc, e);
+    file_close(fd->f);
+    elem = list_next(elem);
+    free(fd);
+  }
 
-
-  // exit and let the children alive
-
+  // exit and let the children and orphan
+  for (elem = list_begin (&t->pd->children); elem != list_end (&t->pd->children);
+       elem = list_next (elem))
+      {
+        struct process_defs *pd = list_entry(elem, struct process_defs, e);
+        pd->parent = NULL;
+      }
 
   // if it has no parent dealocate and die
-  printf("at exit %s %p %d %p\n", cur->name, cur->pd, cur->pd->tid, cur->pd->parent);
-  sema_up(&cur->pd->wait_for); // end of execution, unblock parent
-  cur->pd->exited = true;
+  sema_up(&t->pd->wait_for); // end of execution, unblock parent
+  t->pd->exited = true;
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
-  pd = cur->pagedir;
+  pd = t->pagedir;
   if (pd != NULL) 
     {
       /* Correct ordering here is crucial.  We must set
@@ -191,11 +195,10 @@ process_exit (void)
          directory before destroying the process's page
          directory, or our active page directory will be one
          that's been freed (and cleared). */
-      cur->pagedir = NULL;
+      t->pagedir = NULL;
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
-  printf("aqui: %p %d\n", cur->pd, cur->pd->tid);
 }
 
 /* Sets up the CPU for running user code in the current

@@ -92,9 +92,9 @@ struct process_defs {
    struct semaphore wait_for;
    struct semaphore initializing;
    bool exited;
-   bool parent_already_waiting;
    struct list_elem e;
    tid_t tid;
+   int exit_code;
 };
 #endif
 

@@ -50,6 +50,13 @@ syscall_handler (struct intr_frame *f)
   case SYS_HALT:
     shutdown_power_off();
     break;
+  case SYS_WAIT:
+    {
+      int tid;
+      read_from_user(f->esp+4, &tid, sizeof(int));
+      f->eax = process_wait(tid);
+      break;
+    }
   case SYS_EXIT:
     {
     int code;
@@ -94,7 +101,6 @@ syscall_handler (struct intr_frame *f)
       read_from_user(f->esp + 4, &fd, sizeof(int));
       read_from_user(f->esp + 8, &buffer, sizeof(void *));
       read_from_user(f->esp + 12, &size, sizeof(unsigned));
-
       f->eax = sys_code == SYS_WRITE ? write_syscall(fd, buffer, size) : read_syscall(fd, buffer, size);
       break;
     }
@@ -218,18 +224,21 @@ int filesize_syscall(int fd) {
   return len;
 }
 
+int wait_syscall(tid_t tid) {
+}
+
 tid_t exec_syscall(const char *command_line_arguments) {
   tid_t tid;
-  lock_acquire(&filesys_lock);
   tid = process_execute(command_line_arguments);
-  lock_release(&filesys_lock);
-
   return tid;
 }
 
 // TODO: if exit with a thread we need to release the locks its holding
 void exit_syscall(uint32_t code) {
-  printf("%s: exit(%d)\n", thread_current()->name, code);
+  struct thread *t = thread_current();
+  printf("%s: exit(%d)\n", t->name, code);
+  if(t->pd)
+    t->pd->exit_code = code;
   thread_exit();
 }
 

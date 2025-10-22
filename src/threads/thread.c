@@ -283,19 +283,16 @@ thread_exit (void)
 {
   ASSERT (!intr_context ());
 
-#ifdef USERPROG
-  process_exit ();
-#endif
-
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
   struct thread *t = thread_current();
   #ifdef USERPROG
-  if(t->pd != NULL && t->pd->parent == NULL) {
-    printf("pqp %s\n", t->name);
-    palloc_free_page(t->pd);
+  if(t->pd != NULL) {
+    process_exit ();
+    if(t->pd->parent == NULL)
+      palloc_free_page(t->pd);
   }
   #endif
   list_remove (&t->allelem);
