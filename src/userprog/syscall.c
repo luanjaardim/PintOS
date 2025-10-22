@@ -12,6 +12,7 @@
 #include "filesys/file.h"
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
+#include "userprog/syscall.h"
 
 static void syscall_handler (struct intr_frame *);
 bool create_syscall(const char *file, unsigned initial_size);
@@ -24,7 +25,6 @@ int filesize_syscall(int fd);
 void seek_syscall(int fd, unsigned position);
 unsigned tell_syscall(int fd);
 tid_t exec_syscall(const char *command_line_arguments);
-void exit_syscall(uint32_t code);
 struct file_desc *get_file_desc(struct thread *t, int id);
 static int read_from_user (void *src, void *dst, size_t bytes);
 static bool put_user (uint8_t *udst, uint8_t byte);

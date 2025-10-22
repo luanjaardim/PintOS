@@ -419,6 +419,7 @@ intr_dump_frame (const struct intr_frame *f)
      (#PF)". */
   asm ("movl %%cr2, %0" : "=r" (cr2));
 
+  #ifdef DEBUG
   printf ("Interrupt %#04x (%s) at eip=%p\n",
           f->vec_no, intr_names[f->vec_no], f->eip);
   printf (" cr2=%08"PRIx32" error=%08"PRIx32"\n", cr2, f->error_code);
@@ -428,6 +429,7 @@ intr_dump_frame (const struct intr_frame *f)
           f->esi, f->edi, (uint32_t) f->esp, f->ebp);
   printf (" cs=%04"PRIx16" ds=%04"PRIx16" es=%04"PRIx16" ss=%04"PRIx16"\n",
           f->cs, f->ds, f->es, f->ss);
+  #endif
 }
 
 /* Returns the name of interrupt VEC. */

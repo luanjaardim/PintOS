@@ -95,6 +95,7 @@ struct process_defs {
    struct list_elem e;
    tid_t tid;
    int exit_code;
+   struct file *file_executing;
 };
 #endif
 

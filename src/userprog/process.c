@@ -53,6 +53,7 @@ process_execute (const char *file_name)
   pd->cmd_line = fn_copy;
   pd->exited = false;
   pd->exit_code = 0;
+  pd->file_executing = NULL;
   list_init(&pd->children);
   list_init(&pd->file_descriptors);
   sema_init(&pd->initializing, 0);
@@ -60,10 +61,16 @@ process_execute (const char *file_name)
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (thread_name, PRI_DEFAULT, start_process, (void *)pd);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+  if (tid == TID_ERROR) {
+    palloc_free_page (pd); 
+    return tid;
+  }
 
   sema_down(&pd->initializing);
+  if(pd->tid == TID_ERROR) {
+    palloc_free_page(pd);
+    return TID_ERROR;
+  }
 
   struct thread *cur = thread_current();
   // For threads that were created with the process_execute function
@@ -72,6 +79,7 @@ process_execute (const char *file_name)
     cur->pd->tid = cur->tid;
     list_init(&cur->pd->children);
     cur->pd->exited = false;
+    cur->pd->file_executing = NULL;
   }
   list_push_back(&cur->pd->children, &pd->e);
 
@@ -103,10 +111,8 @@ start_process (void *arg_)
   cur->pd->tid = success ? cur->tid : TID_ERROR;
   sema_up(&cur->pd->initializing); // end of initialization
 
-  if (!success) {
-    palloc_free_page(arg);
+  if (!success)
     thread_exit ();
-  }
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -179,6 +185,11 @@ process_exit (void)
         pd->parent = NULL;
       }
 
+  // Close the file being executed
+  if(t->pd->file_executing != NULL) {
+    file_allow_write(t->pd->file_executing);
+    file_close(t->pd->file_executing);
+  }
   // if it has no parent dealocate and die
   sema_up(&t->pd->wait_for); // end of execution, unblock parent
   t->pd->exited = true;
@@ -398,12 +409,12 @@ load (const char *params, void (**eip) (void), void **esp)
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
-
+  file_deny_write(file);
+  thread_current()->pd->file_executing = file;
   success = true;
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
   return success;
 }
 
