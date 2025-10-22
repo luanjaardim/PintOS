@@ -43,5 +43,6 @@ get_bad_boundary (void)
 {
   /* This code assumes that dst will be in the highest page
    * allocated to the user process. */
-  return (void *) ROUND_UP ((uintptr_t) (dst + sizeof(dst) - 1), 4096);
+  // Value of boundary changed to what was specified on documentation
+  return (void *) 0x08048000;
 }
