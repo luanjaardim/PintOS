@@ -99,6 +99,10 @@ main (void)
   malloc_init ();
   paging_init ();
 
+#ifdef VIRT_MEM
+  frame_table_init();
+#endif
+
   /* Segmentation. */
 #ifdef USERPROG
   tss_init ();

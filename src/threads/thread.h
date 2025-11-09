@@ -5,6 +5,9 @@
 #include <list.h>
 #include <stdint.h>
 #include "synch.h"
+#ifndef VIRT_MEM
+#include "vm/frame_table.h"
+#endif
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -117,6 +120,10 @@ struct thread
     /* Owned by userprog/process.c. */
     struct process_defs *pd;
     uint32_t *pagedir;                  /* Page directory. */
+#endif
+
+#ifdef VIRT_MEM
+     struct sup_page_table *sp;
 #endif
 
     /* Owned by thread.c. */

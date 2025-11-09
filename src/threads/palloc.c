@@ -110,7 +110,12 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
 void *
 palloc_get_page (enum palloc_flags flags) 
 {
-  return palloc_get_multiple (flags, 1);
+  void *page = palloc_get_multiple (flags, 1);
+  if(page == NULL) return NULL;
+  if(flags & PAL_USER) {
+    ASSERT(insert_page_on_table(page));
+  }
+  return page;
 }
 
 /* Frees the PAGE_CNT pages starting at PAGES. */
@@ -126,8 +131,10 @@ palloc_free_multiple (void *pages, size_t page_cnt)
 
   if (page_from_pool (&kernel_pool, pages))
     pool = &kernel_pool;
-  else if (page_from_pool (&user_pool, pages))
+  else if (page_from_pool (&user_pool, pages)) {
+    free_page_on_table(pages); // free user pages from frame_table
     pool = &user_pool;
+  }
   else
     NOT_REACHED ();
 

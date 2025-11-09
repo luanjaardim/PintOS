@@ -167,7 +167,6 @@ page_fault (struct intr_frame *f)
           user ? "user" : "kernel");
   #endif
 
-  #define VIRT_MEM
   #ifdef VIRT_MEM
   bool is_addr_valid = 
       fault_addr != NULL &&
