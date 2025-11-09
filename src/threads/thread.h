@@ -123,7 +123,7 @@ struct thread
 #endif
 
 #ifdef VIRT_MEM
-     struct sup_page_table *sp;
+     struct hash sup_pg_t;
 #endif
 
     /* Owned by thread.c. */

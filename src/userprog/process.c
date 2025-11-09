@@ -193,6 +193,9 @@ process_exit (void)
   // if it has no parent dealocate and die
   sema_up(&t->pd->wait_for); // end of execution, unblock parent
   t->pd->exited = true;
+  #ifdef VIRT_MEM
+  hash_destroy(&t->sup_pg_t, sup_destroy_func);
+  #endif
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -319,6 +322,9 @@ load (const char *params, void (**eip) (void), void **esp)
 
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
+  #ifdef VIRT_MEM
+  hash_init(&t->sup_pg_t, sup_hash_func, sup_less_func, NULL);
+  #endif
   if (t->pagedir == NULL)
     goto done;
   process_activate ();
