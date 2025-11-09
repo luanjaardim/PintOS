@@ -4,7 +4,10 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
 #include "userprog/syscall.h"
+#include "threads/palloc.h"
+#include "userprog/process.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -163,13 +166,34 @@ page_fault (struct intr_frame *f)
           write ? "writing" : "reading",
           user ? "user" : "kernel");
   #endif
-  if(user) {
+
+  #define VIRT_MEM
+  #ifdef VIRT_MEM
+  bool is_addr_valid = 
+      fault_addr != NULL &&
+      fault_addr < PHYS_BASE &&
+      fault_addr > 0x08048000 &&
+      fault_addr >= f->esp - 32;
+
+  if(is_addr_valid) {
+    void *upage = pg_round_down(fault_addr);
+    ASSERT(upage != NULL);
+    void *kpage = (void*) palloc_get_page(PAL_USER | PAL_ZERO);
+    bool success = install_page(upage, kpage, true);
+    return;
+  }
+
+  #endif
+
+  if(user  == false) { // as specified by the PintOS documentation
+   f->eip = (void *) f->eax;
+   f->eax = 0xFFFFFFFF;
+  } else {
    struct thread *t = thread_current();
    printf("%s: exit(%d)\n", t->name, -1);
    if(t->pd)
       t->pd->exit_code = -1;
   }
-
   kill (f);
 }
 
