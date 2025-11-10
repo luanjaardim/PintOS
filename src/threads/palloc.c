@@ -10,6 +10,9 @@
 #include "threads/loader.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#ifdef VIRT_MEM
+#include "vm/frame_table.h"
+#endif
 
 /* Page allocator.  Hands out memory in page-size (or
    page-multiple) chunks.  See malloc.h for an allocator that
@@ -111,9 +114,9 @@ void *
 palloc_get_page (enum palloc_flags flags) 
 {
   void *page = palloc_get_multiple (flags, 1);
-  if(page == NULL) return NULL;
-  if(flags & PAL_USER) {
-    ASSERT(insert_page_on_table(page));
+  if((page == NULL) && (flags & PAL_USER)) { //failed to allocate a user page
+    page = remove_oldest_table();
+    printf("page: %p\n", page);
   }
   return page;
 }

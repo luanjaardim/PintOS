@@ -178,7 +178,8 @@ page_fault (struct intr_frame *f)
     void *upage = pg_round_down(fault_addr);
     ASSERT(upage != NULL);
     void *kpage = (void*) palloc_get_page(PAL_USER | PAL_ZERO);
-    bool success = install_page(upage, kpage, true);
+    bool success = insert_page_on_table(upage, kpage, true);
+    ASSERT(success);
     return;
   }
 

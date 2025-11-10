@@ -20,6 +20,7 @@
 #include "devices/timer.h"
 #include "lib/kernel/list.h"
 #include "threads/synch.h"
+#include "vm/supt_table.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -516,7 +517,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
 
       /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
+      if (!insert_page_on_table (upage, kpage, writable)) 
         {
           palloc_free_page (kpage);
           return false; 
@@ -541,7 +542,7 @@ setup_stack (const char *cmd_args, void **esp)
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
     {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+      success = insert_page_on_table(((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
         *esp = PHYS_BASE;
       else

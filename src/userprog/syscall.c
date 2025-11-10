@@ -13,6 +13,7 @@
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
 #include "userprog/syscall.h"
+#include "vm/supt_table.h"
 
 static void syscall_handler (struct intr_frame *);
 bool create_syscall(const char *file, unsigned initial_size);
@@ -303,6 +304,11 @@ static int get_user (const uint8_t *uaddr) {
   if(pagedir_get_page(thread_current()->pagedir, uaddr) == NULL) {
     return -1;
   }
+  struct sup_page_table_entry tmp;
+  tmp.upage = pg_round_down(uaddr);
+  printf("acessing this page: %p, found %d\n", tmp.upage);
+  struct sup_page_table_entry *e = hash_find(&thread_current()->sup_pg_t, &tmp.e);;
+  printf("was %s found!\n", e == NULL ? "not" : "");
 
   // as suggested in the reference manual
   int result;
