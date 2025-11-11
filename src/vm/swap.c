@@ -16,16 +16,15 @@ void swap_init() {
     swap_size = block_size(global_swap_block) / SECTORS_PER_PAGE; // number of pages
     used_positions = bitmap_create(swap_size);
     bitmap_set_all(used_positions, FREE);
-
     lock_init(&swap_lock);
 }
 
 int send_to_swap(void *page) {
     lock_acquire(&swap_lock);
-    int index = bitmap_scan(global_swap_block, 0, 1, FREE);
+    int index = bitmap_scan(used_positions, 0, 1, FREE);
     ASSERT(index != BITMAP_ERROR);
     write_to_block(page, index);
-    bitmap_set(global_swap_block, index, OCCUPIED);
+    bitmap_set(used_positions, index, OCCUPIED);
     lock_release(&swap_lock);
     return index;
 }
@@ -33,10 +32,9 @@ int send_to_swap(void *page) {
 void take_from_swap(void *page, unsigned index) {
     ASSERT(index < swap_size);
     lock_acquire(&swap_lock);
-    if(bitmap_test(global_swap_block, index) == FREE) PANIC("Invalid swap index");
-
+    if(bitmap_test(used_positions, index) == FREE) PANIC("Invalid swap index");
     read_from_block(page, index);
-    bitmap_set(global_swap_block, index, FREE);
+    bitmap_set(used_positions, index, FREE);
     lock_release(&swap_lock);
 }
 
