@@ -1,4 +1,3 @@
-#define VIRT_MEM
 #ifndef __SWAP_LIB__
 #define __SWAP_LIB__
 

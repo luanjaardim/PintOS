@@ -10,8 +10,10 @@
 #include "threads/loader.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#define VIRT_MEM
 #ifdef VIRT_MEM
 #include "vm/frame_table.h"
+#include "vm/supt_table.h"
 #endif
 
 /* Page allocator.  Hands out memory in page-size (or
@@ -115,8 +117,7 @@ palloc_get_page (enum palloc_flags flags)
 {
   void *page = palloc_get_multiple (flags, 1);
   if((page == NULL) && (flags & PAL_USER)) { //failed to allocate a user page
-    page = remove_oldest_table();
-    printf("page: %p\n", page);
+    page = remove_oldest_kpage();
   }
   return page;
 }
@@ -134,10 +135,8 @@ palloc_free_multiple (void *pages, size_t page_cnt)
 
   if (page_from_pool (&kernel_pool, pages))
     pool = &kernel_pool;
-  else if (page_from_pool (&user_pool, pages)) {
-    free_page_on_table(pages); // free user pages from frame_table
+  else if (page_from_pool (&user_pool, pages))
     pool = &user_pool;
-  }
   else
     NOT_REACHED ();
 
@@ -155,6 +154,9 @@ palloc_free_multiple (void *pages, size_t page_cnt)
 void
 palloc_free_page (void *page) 
 {
+  if(page_from_pool (&user_pool, page)) {
+    remove_kpage(page);
+  }
   palloc_free_multiple (page, 1);
 }
 

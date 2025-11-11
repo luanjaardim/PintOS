@@ -324,7 +324,7 @@ load (const char *params, void (**eip) (void), void **esp)
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   #ifdef VIRT_MEM
-  hash_init(&t->sup_pg_t, sup_hash_func, sup_less_func, NULL);
+  hash_init(&t->sup_pg_t, sup_hash_func, sup_less_func, t);
   #endif
   if (t->pagedir == NULL)
     goto done;

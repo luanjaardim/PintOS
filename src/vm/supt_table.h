@@ -29,7 +29,8 @@ struct sup_page_table_entry {
     struct hash_elem e;
 };
 
-struct sup_page_table_entry *sup_get_page(const struct hash *h, void *page);
+struct sup_page_table_entry *sup_get_entry(const struct hash *h, void *page);
+void *remove_from_supt_table(const struct hash *h, void *upage, bool remove_from_pagedir);
 void evict_frame(struct sup_page_table_entry *spt);
 
 unsigned sup_hash_func(const struct hash_elem *elem, void *aux UNUSED);

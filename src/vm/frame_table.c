@@ -10,8 +10,15 @@ void frame_table_init() {
     lock_init(&frame_lock);
 }
 
+struct frame_table_entry *get_entry(void *page) {
+  struct frame_table_entry tmp;
+  tmp.kpage = page;
+  struct hash_elem *e = hash_find(&frame_table, &tmp.e);
+  if(e) return hash_entry (e, struct frame_table_entry, e);
+  else return NULL;
+}
+
 bool insert_page_on_table(void *upage, void *kpage, bool writable) {
-  printf("upage: %p, kpage: %p\n", upage, kpage);
     if(upage == NULL || kpage == NULL) return false;
     struct frame_table_entry *elem = malloc(sizeof(struct frame_table_entry));
     struct sup_page_table_entry *elem_sup = malloc(sizeof(struct sup_page_table_entry));
@@ -41,72 +48,64 @@ bool insert_page_on_table(void *upage, void *kpage, bool writable) {
     return true;
 }
 
-void free_page_on_table(void *kpage) {
+// removes a kpage from frame table and returns its upage
+void *remove_from_frame_table(void *kpage) {
     struct frame_table_entry tmp_;
-    struct sup_page_table_entry tmp2_;
     tmp_.kpage = kpage;
     lock_acquire(&frame_lock);
 
     struct hash_elem *h = hash_find(&frame_table, &(tmp_.e));
     if(h == NULL) PANIC("Page not found on frame table");
-
     struct frame_table_entry *elem = hash_entry(h, struct frame_table_entry, e);
+    void *upage = elem->upage;
     hash_delete(&frame_table, &(elem->e));
-    tmp2_.upage = elem->upage;
-
-    // If this process haven't already being terminated
-    if(!hash_empty(&elem->owner->sup_pg_t)) {
-        h = hash_find(&elem->owner->sup_pg_t, &(tmp2_.e));
-        if(h == NULL) PANIC("Page not found on thread sup frame table");
-        struct sup_page_table_entry *elem2 = hash_entry(h, struct sup_page_table_entry, e);
-        hash_delete(&elem->owner->sup_pg_t, &(elem2->e));
-        free(elem2);
-        void *page = pagedir_get_page(elem->owner->pagedir, elem->upage);
-        printf("testing: %p\n", page);
-    }
 
     lock_release(&frame_lock);
     free(elem);
+    return upage;
 }
 
-void *remove_oldest_table() {
+// remove kpage from both frame table and sup table
+void remove_kpage(void *kpage) {
+// TODO REMOVE FROM SWAP IF THERE
+  struct frame_table_entry *ft = get_entry(kpage);
+  struct thread *t = ft->owner;
+  struct sup_page_table_entry *sp = sup_get_entry(&t->sup_pg_t, ft->upage);
+  void *upage = sp->upage;
+  remove_from_frame_table(kpage);
+  remove_from_supt_table(&t->sup_pg_t, upage, true);
+}
+
+void *get_oldest_table() {
     if(hash_empty(&frame_table)) PANIC("Hash should not be empty\n");
 
     struct hash_iterator i;
     struct sup_page_table_entry *oldest = NULL;
-    struct thread *oldest_t = NULL;
 
+    lock_acquire(&frame_lock);
     hash_first (&i, &frame_table);
     while (hash_next (&i))
     {
         struct frame_table_entry *f = hash_entry (hash_cur (&i), struct frame_table_entry, e);
         struct thread *t = f->owner;
-        struct sup_page_table_entry *sp = sup_get_page(&t->sup_pg_t, f->upage);
-        if(oldest == NULL || sp->access_time < oldest->access_time) {
+        struct sup_page_table_entry *sp = sup_get_entry(&t->sup_pg_t, f->upage);
+        if(oldest == NULL || sp->access_time < oldest->access_time) 
           oldest = sp;
-          oldest_t = t;
-        }
     }
-    if(oldest) {
-      lock_acquire(&frame_lock);
-      struct frame_table_entry tmp;
-      tmp.kpage = oldest->kpage;
-      // remove the page from thread pagedir
-      pagedir_clear_page(oldest_t->pagedir, oldest->kpage);
-      printf("pointer user: %p, pointer kernel: %p\n", oldest->upage, oldest->kpage);
-      hash_delete(&frame_table, &tmp.e); //only remove from the frame table
-      evict_frame(oldest);
-      lock_release(&frame_lock);
-      return oldest->kpage;
-    }
+    lock_release(&frame_lock);
+    if(oldest) return oldest->kpage;
     else return NULL;
 }
-struct frame_table_entry *get_entry(void *page) {
-  struct frame_table_entry tmp;
-  tmp.kpage = page;
-  struct hash_elem *e = hash_find(&frame_table, &tmp.e);
-  if(e) return hash_entry (e, struct frame_table_entry, e);
-  else return NULL;
+
+void *remove_oldest_kpage() {
+    void *page = get_oldest_table(); // removed the oldest page, it can now be used by the next process
+    struct frame_table_entry *ft = get_entry(page);
+    struct thread *t = ft->owner;
+    struct sup_page_table_entry *sp = sup_get_entry(&t->sup_pg_t, ft->upage);
+    void *upage = remove_from_frame_table(page);
+    pagedir_clear_page(t->pagedir, upage);
+    evict_frame(sp);
+    return page;
 }
 
 unsigned frame_hash_func(const struct hash_elem *elem, void *aux UNUSED)

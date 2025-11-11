@@ -306,9 +306,9 @@ static int get_user (const uint8_t *uaddr) {
   }
   struct sup_page_table_entry tmp;
   tmp.upage = pg_round_down(uaddr);
-  printf("acessing this page: %p, found %d\n", tmp.upage);
   struct sup_page_table_entry *e = hash_find(&thread_current()->sup_pg_t, &tmp.e);;
-  printf("was %s found!\n", e == NULL ? "not" : "");
+  ASSERT(e != NULL);
+  e->access_time = timer_ticks(); // page access, so update access_time
 
   // as suggested in the reference manual
   int result;

@@ -26,8 +26,10 @@ struct frame_table_entry {
 
 void frame_table_init();
 bool insert_page_on_table(void *upage, void *kpage, bool writable);
-void free_page_on_table(void *page);
-void *remove_oldest_table();
+void *remove_from_frame_table(void *kpage);
+void remove_kpage(void *kpage);
+void *get_oldest_table();
+void *remove_oldest_kpage();
 
 unsigned frame_hash_func(const struct hash_elem *elem, void *aux UNUSED);
 bool frame_less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED);

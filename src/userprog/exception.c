@@ -8,6 +8,8 @@
 #include "userprog/syscall.h"
 #include "threads/palloc.h"
 #include "userprog/process.h"
+#include "vm/supt_table.h"
+#include "vm/swap.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -167,24 +169,46 @@ page_fault (struct intr_frame *f)
           user ? "user" : "kernel");
   #endif
 
-  #ifdef VIRT_MEM
-  bool is_addr_valid = 
-      fault_addr != NULL &&
-      fault_addr < PHYS_BASE &&
-      fault_addr > 0x08048000 &&
-      fault_addr >= f->esp - 32;
+#ifdef VIRT_MEM
+   if(user) {
+       bool is_addr_valid =
+             fault_addr != NULL &&
+             fault_addr < PHYS_BASE &&
+             fault_addr > 0x08048000 &&
+             fault_addr >= f->esp - 32;
 
-  if(is_addr_valid) {
-    void *upage = pg_round_down(fault_addr);
-    ASSERT(upage != NULL);
-    void *kpage = (void*) palloc_get_page(PAL_USER | PAL_ZERO);
-    bool success = insert_page_on_table(upage, kpage, true);
-    ASSERT(success);
-    return;
+       if(is_addr_valid) {
+           void *upage = pg_round_down(fault_addr);
+           ASSERT(upage != NULL);
+           void *kpage = (void*) palloc_get_page(PAL_USER | PAL_ZERO);
+           bool success = insert_page_on_table(upage, kpage, true);
+           ASSERT(success);
+           return;
+       }
+
+      struct thread *t = thread_current();
+      void *upage = pg_round_down(fault_addr);
+      struct sup_page_table_entry *sp = sup_get_entry(&t->sup_pg_t, upage);
+      // It was an evicted page, and so we get it again from swap
+      if(sp != NULL) {
+         void *old = remove_oldest_kpage();
+         switch (sp->status)
+         {
+         case EVICTED:
+            take_from_swap(old, sp->swap_index);
+            remove_from_supt_table(&t->sup_pg_t, upage, false); // remove to insert again below
+            bool success = insert_page_on_table(upage, old, true);
+            ASSERT(success);
+            return;
+         default:
+            printf("don't know ma bro\n");
+            break;
+         }
+      }
   }
+#endif
 
-  #endif
-
+FAILED_TO_HANDLE:
   if(user  == false) { // as specified by the PintOS documentation
    f->eip = (void *) f->eax;
    f->eax = 0xFFFFFFFF;
