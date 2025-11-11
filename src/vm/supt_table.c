@@ -1,4 +1,5 @@
 #include "supt_table.h"
+#include "vm/swap.h"
 
 struct sup_page_table_entry *sup_get_entry(const struct hash *h, void *page) {
   struct sup_page_table_entry tmp;
@@ -48,7 +49,20 @@ void sup_destroy_func(struct hash_elem *elem, void *aux)
 {
   struct thread *t = (struct thread *)aux;
   struct sup_page_table_entry *entry = hash_entry(elem, struct sup_page_table_entry, e);
-  pagedir_clear_page(t->pagedir, entry->upage);
+  switch (entry->status)
+  {
+  case EVICTED:
+    swap_free(entry->swap_index);
+    break;
+  case OWNED:
+    pagedir_clear_page(t->pagedir, entry->upage);
+    remove_from_frame_table(entry->kpage);
+    break;
+  default:
+    NOT_REACHED()
+    break;
+  }
+  palloc_free_multiple(entry->kpage, 1);
   free(entry);
   return;
 }

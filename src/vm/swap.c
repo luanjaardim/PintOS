@@ -38,6 +38,14 @@ void take_from_swap(void *page, unsigned index) {
     lock_release(&swap_lock);
 }
 
+void swap_free(unsigned index) {
+    ASSERT(index < swap_size);
+    lock_acquire(&swap_lock);
+    if(bitmap_test(used_positions, index) == FREE) PANIC("Invalid swap index");
+    bitmap_set(used_positions, index, FREE);
+    lock_release(&swap_lock);
+}
+
 void read_from_block(uint8_t* frame, int index)
 {
     for(int i = 0; i < 8; ++i)

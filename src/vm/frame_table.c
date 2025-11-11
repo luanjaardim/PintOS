@@ -34,6 +34,8 @@ bool insert_page_on_table(void *upage, void *kpage, bool writable) {
     elem->upage = elem_sup->upage = upage;
     elem_sup->access_time = timer_ticks();
     elem_sup->dirty = false;
+    elem_sup->status = OWNED;
+    elem_sup->swap_index = -1;
 
     // Insert on frame table map
     hash_insert(&frame_table, &elem->e);

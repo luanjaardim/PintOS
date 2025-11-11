@@ -171,21 +171,6 @@ page_fault (struct intr_frame *f)
 
 #ifdef VIRT_MEM
    if(user) {
-       bool is_addr_valid =
-             fault_addr != NULL &&
-             fault_addr < PHYS_BASE &&
-             fault_addr > 0x08048000 &&
-             fault_addr >= f->esp - 32;
-
-       if(is_addr_valid) {
-           void *upage = pg_round_down(fault_addr);
-           ASSERT(upage != NULL);
-           void *kpage = (void*) palloc_get_page(PAL_USER | PAL_ZERO);
-           bool success = insert_page_on_table(upage, kpage, true);
-           ASSERT(success);
-           return;
-       }
-
       struct thread *t = thread_current();
       void *upage = pg_round_down(fault_addr);
       struct sup_page_table_entry *sp = sup_get_entry(&t->sup_pg_t, upage);
@@ -204,6 +189,20 @@ page_fault (struct intr_frame *f)
             printf("don't know ma bro\n");
             break;
          }
+      }
+      bool is_addr_valid =
+            fault_addr != NULL &&
+            fault_addr < PHYS_BASE &&
+            fault_addr > 0x08048000 &&
+            fault_addr >= f->esp - 32;
+
+      if(is_addr_valid) {
+          void *upage = pg_round_down(fault_addr);
+          ASSERT(upage != NULL);
+          void *kpage = (void*) palloc_get_page(PAL_USER | PAL_ZERO);
+          bool success = insert_page_on_table(upage, kpage, true);
+          ASSERT(success);
+          return;
       }
   }
 #endif

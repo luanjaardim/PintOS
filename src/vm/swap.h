@@ -15,5 +15,6 @@
 void swap_init();
 int send_to_swap(void *page);
 void take_from_swap(void *page, unsigned index);
+void swap_free(unsigned index);
 
 #endif

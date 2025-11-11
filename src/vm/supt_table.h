@@ -11,6 +11,7 @@
 #include "threads/synch.h"
 #include "devices/timer.h"
 #include "userprog/pagedir.h"
+#include "threads/palloc.h"
 
 enum pg_stats {
     OWNED,
