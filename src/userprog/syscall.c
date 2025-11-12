@@ -169,6 +169,7 @@ int open_syscall(const char *file) {
   lock_acquire(&filesys_lock);
   struct file *f = filesys_open(file);
   if(f == NULL) {
+    printf("File '%s' was not found \n", file);
     lock_release(&filesys_lock);
     return -1;
   }
@@ -201,17 +202,19 @@ int write_syscall(int fd, void *buffer, uint32_t size) {
   is_user_loc(buffer + size - 1);
   int len;
 
+  lock_acquire(&filesys_lock);
   if(fd == STDOUT_FILENO) {
     putbuf(buffer, size);
     len = size;
   } else {
     struct file_desc *desc =  get_file_desc(thread_current(), fd);
     if(desc && desc->f) {
-      lock_acquire(&filesys_lock);
+      load_and_set_not_evictable_buffer(buffer, size);
       len = file_write(desc->f, buffer, size);
-      lock_release(&filesys_lock);
+      unset_not_evictable_buffer(buffer, size);
     } else exit_syscall(-1);
   }
+  lock_release(&filesys_lock);
   return len;
 }
 
@@ -221,12 +224,17 @@ int read_syscall(int fd, void *buffer, uint32_t size) {
   int len;
 
   if(fd == 1 || fd == 2) exit_syscall(-1);
+  lock_acquire(&filesys_lock);
   struct file_desc *desc =  get_file_desc(thread_current(), fd);
   if(desc && desc->f) {
-    lock_acquire(&filesys_lock);
+    load_and_set_not_evictable_buffer(buffer, size);
     len = file_read(desc->f, buffer, size);
+    unset_not_evictable_buffer(buffer, size);
     lock_release(&filesys_lock);
-  } else exit_syscall(-1);
+  } else {
+    lock_release(&filesys_lock);
+    exit_syscall(-1);
+  }
 
   return len;
 }
@@ -302,7 +310,10 @@ static int get_user (const uint8_t *uaddr) {
     return -1;
   }
   if(pagedir_get_page(thread_current()->pagedir, uaddr) == NULL) {
-    return -1;
+    void *upage = pg_round_down(uaddr);
+    struct sup_page_table_entry *sp = sup_get_entry(&thread_current()->sup_pg_t, upage);
+    if(sp) load_from_swap_again(&thread_current()->sup_pg_t, upage);
+    else return -1;
   }
   struct sup_page_table_entry tmp;
   tmp.upage = pg_round_down(uaddr);

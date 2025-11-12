@@ -115,7 +115,7 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
 void *
 palloc_get_page (enum palloc_flags flags) 
 {
-  void *page = palloc_get_multiple (flags, 1);
+  void *page = palloc_get_multiple (flags | PAL_ZERO, 1);
   if((page == NULL) && (flags & PAL_USER)) { //failed to allocate a user page
     page = remove_oldest_kpage();
   }

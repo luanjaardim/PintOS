@@ -183,7 +183,7 @@ page_fault (struct intr_frame *f)
       {
       case EVICTED:
          take_from_swap(old, sp->swap_index);
-         remove_from_supt_table(&t->sup_pg_t, upage, false); // remove to insert again below
+         remove_from_supt_table(&t->sup_pg_t, upage, true); // remove to insert again below
          bool success = insert_page_on_table(upage, old, true);
          ASSERT(success);
          return;

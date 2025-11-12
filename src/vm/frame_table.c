@@ -28,6 +28,7 @@ bool insert_page_on_table(void *upage, void *kpage, bool writable) {
         return false;
     }
     elem->owner = thread_current();
+    elem->evictable = true;
     elem->kpage = elem_sup->kpage = kpage;
     elem->upage = elem_sup->upage = upage;
     elem_sup->access_time = timer_ticks();
@@ -85,6 +86,7 @@ void *get_oldest_table() {
     while (hash_next (&i))
     {
         struct frame_table_entry *f = hash_entry (hash_cur (&i), struct frame_table_entry, e);
+        if(!f->evictable) continue;
         struct thread *t = f->owner;
         struct sup_page_table_entry *sp = sup_get_entry(&t->sup_pg_t, f->upage);
         if(oldest == NULL || sp->access_time < oldest->access_time) 
@@ -93,6 +95,48 @@ void *get_oldest_table() {
     lock_release(&frame_lock);
     if(oldest) return oldest->kpage;
     else return NULL;
+}
+
+void load_from_swap_again(struct hash *table, void *upage) {
+  struct sup_page_table_entry *sp = sup_get_entry(table, upage);
+  void *new_page = remove_oldest_kpage();
+  take_from_swap(new_page, sp->swap_index);
+  // TODO: change here to true
+  remove_from_supt_table(table, upage, true); // remove to insert again below
+  bool success = insert_page_on_table(upage, new_page, true);
+  ASSERT(success);
+}
+
+void load_and_set_not_evictable_buffer(const void *buffer, size_t size) {
+  struct hash *table = &thread_current()->sup_pg_t;
+  void *upage;
+  for(upage = pg_round_down(buffer); upage < buffer + size; upage += PGSIZE)
+  {
+    struct sup_page_table_entry *sp = sup_get_entry(table, upage);
+    switch (sp->status)
+    {
+    case OWNED:
+      get_entry(sp->kpage)->evictable = false;
+      break;
+    case EVICTED:
+      load_from_swap_again(table, upage);
+      break;
+    
+    default:
+      break;
+    }
+  }
+}
+
+void unset_not_evictable_buffer(const void *buffer, size_t size) {
+  struct hash *table = &thread_current()->sup_pg_t;
+  void *upage;
+  for(upage = pg_round_down(buffer); upage < buffer + size; upage += PGSIZE)
+  {
+    struct sup_page_table_entry *sp = sup_get_entry(table, upage);
+    ASSERT(sp->status == OWNED);
+    get_entry(sp->kpage)->evictable = true;
+  }
 }
 
 void *remove_oldest_kpage() {

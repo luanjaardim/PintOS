@@ -20,6 +20,9 @@ struct frame_table_entry {
     uint32_t* kpage;
     uint32_t* upage;
     struct thread* owner;
+    // when reading or writing to a file we need all of it in the memory, because it is a blocking operation
+    // so the page cannot be evicted
+    bool evictable;
 
     struct hash_elem e;
 };
@@ -30,6 +33,9 @@ void *remove_from_frame_table(void *kpage);
 void remove_kpage(void *kpage);
 void *get_oldest_table();
 void *remove_oldest_kpage();
+void load_from_swap_again(struct hash *table, void *upage);
+void load_and_set_not_evictable_buffer(const void *buffer, size_t size);
+void unset_not_evictable_buffer(const void *buffer, size_t size);
 
 unsigned frame_hash_func(const struct hash_elem *elem, void *aux UNUSED);
 bool frame_less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED);
