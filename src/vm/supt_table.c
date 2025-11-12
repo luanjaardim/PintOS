@@ -28,9 +28,9 @@ void *remove_from_supt_table(const struct hash *table, void *upage, bool remove_
 }
 
 void evict_frame(struct sup_page_table_entry *spt) {
-    spt->status = EVICTED;
     spt->swap_index = send_to_swap(spt->kpage);
     spt->kpage = NULL;
+    spt->status = EVICTED;
 }
 
 unsigned sup_hash_func(const struct hash_elem *elem, void *aux UNUSED)

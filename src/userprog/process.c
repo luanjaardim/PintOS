@@ -186,6 +186,9 @@ process_exit (void)
         pd->parent = NULL;
       }
 
+  #ifdef VIRT_MEM
+  hash_destroy(&t->sup_pg_t, sup_destroy_func);
+  #endif
   // Close the file being executed
   if(t->pd->file_executing != NULL) {
     file_allow_write(t->pd->file_executing);
@@ -194,9 +197,6 @@ process_exit (void)
   // if it has no parent dealocate and die
   sema_up(&t->pd->wait_for); // end of execution, unblock parent
   t->pd->exited = true;
-  #ifdef VIRT_MEM
-  hash_destroy(&t->sup_pg_t, sup_destroy_func);
-  #endif
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */

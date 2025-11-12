@@ -27,8 +27,6 @@ bool insert_page_on_table(void *upage, void *kpage, bool writable) {
         free(elem_sup);
         return false;
     }
-
-    lock_acquire(&frame_lock);
     elem->owner = thread_current();
     elem->kpage = elem_sup->kpage = kpage;
     elem->upage = elem_sup->upage = upage;
@@ -37,6 +35,7 @@ bool insert_page_on_table(void *upage, void *kpage, bool writable) {
     elem_sup->status = OWNED;
     elem_sup->swap_index = -1;
 
+    lock_acquire(&frame_lock);
     // Insert on frame table map
     hash_insert(&frame_table, &elem->e);
     // Insert on sup frame table of the thread
@@ -55,21 +54,19 @@ void *remove_from_frame_table(void *kpage) {
     struct frame_table_entry tmp_;
     tmp_.kpage = kpage;
     lock_acquire(&frame_lock);
-
     struct hash_elem *h = hash_find(&frame_table, &(tmp_.e));
     if(h == NULL) PANIC("Page not found on frame table");
     struct frame_table_entry *elem = hash_entry(h, struct frame_table_entry, e);
     void *upage = elem->upage;
     hash_delete(&frame_table, &(elem->e));
-
     lock_release(&frame_lock);
+
     free(elem);
     return upage;
 }
 
 // remove kpage from both frame table and sup table
 void remove_kpage(void *kpage) {
-// TODO REMOVE FROM SWAP IF THERE
   struct frame_table_entry *ft = get_entry(kpage);
   struct thread *t = ft->owner;
   struct sup_page_table_entry *sp = sup_get_entry(&t->sup_pg_t, ft->upage);
@@ -79,12 +76,11 @@ void remove_kpage(void *kpage) {
 }
 
 void *get_oldest_table() {
-    if(hash_empty(&frame_table)) PANIC("Hash should not be empty\n");
-
     struct hash_iterator i;
     struct sup_page_table_entry *oldest = NULL;
 
     lock_acquire(&frame_lock);
+    if(hash_empty(&frame_table)) PANIC("Hash should not be empty\n");
     hash_first (&i, &frame_table);
     while (hash_next (&i))
     {

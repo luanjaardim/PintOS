@@ -168,28 +168,31 @@ page_fault (struct intr_frame *f)
           write ? "writing" : "reading",
           user ? "user" : "kernel");
   #endif
+  if(!not_present) {
+   goto FAILED_TO_HANDLE;
+  }
 
 #ifdef VIRT_MEM
-   if(user) {
-      struct thread *t = thread_current();
-      void *upage = pg_round_down(fault_addr);
-      struct sup_page_table_entry *sp = sup_get_entry(&t->sup_pg_t, upage);
-      // It was an evicted page, and so we get it again from swap
-      if(sp != NULL) {
-         void *old = remove_oldest_kpage();
-         switch (sp->status)
-         {
-         case EVICTED:
-            take_from_swap(old, sp->swap_index);
-            remove_from_supt_table(&t->sup_pg_t, upage, false); // remove to insert again below
-            bool success = insert_page_on_table(upage, old, true);
-            ASSERT(success);
-            return;
-         default:
-            printf("don't know ma bro\n");
-            break;
-         }
+   struct thread *t = thread_current();
+   void *upage = pg_round_down(fault_addr);
+   struct sup_page_table_entry *sp = sup_get_entry(&t->sup_pg_t, upage);
+   // It was an evicted page, and so we get it again from swap
+   if(sp != NULL) {
+      void *old = remove_oldest_kpage();
+      switch (sp->status)
+      {
+      case EVICTED:
+         take_from_swap(old, sp->swap_index);
+         remove_from_supt_table(&t->sup_pg_t, upage, false); // remove to insert again below
+         bool success = insert_page_on_table(upage, old, true);
+         ASSERT(success);
+         return;
+      default:
+         printf("don't know ma bro\n");
+         break;
       }
+   }
+   if(user) {
       bool is_addr_valid =
             fault_addr != NULL &&
             fault_addr < PHYS_BASE &&
