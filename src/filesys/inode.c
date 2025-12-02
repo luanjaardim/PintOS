@@ -9,15 +9,22 @@
 
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
+#define DIRECT_BLOCKS 123
+#define INDIRECT_BLOCKS 128
+
+static bool inode_reserve(struct inode_disk *disk_inode, off_t length);
+static bool inode_reserve_aux(block_sector_t *block, size_t num_sectors, size_t level);
 
 /* On-disk inode.
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_disk
   {
-    block_sector_t start;               /* First data sector. */
-    off_t length;                       /* File size in bytes. */
-    unsigned magic;                     /* Magic number. */
-    uint32_t unused[125];               /* Not used. */
+    block_sector_t direct_blocks[DIRECT_BLOCKS];     /* Direct referenced blocks. */
+    block_sector_t indirect_block;                   /* Can redirect up to 128 indirect blocks */
+    block_sector_t double_ind_block;                 /* Can redirect up to 128 * 128 indirect blocks */
+    off_t length;                                    /* File size in bytes. */
+    int32_t is_dir;
+    unsigned magic;                                  /* Magic number. */
   };
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -70,7 +77,7 @@ inode_init (void)
    Returns true if successful.
    Returns false if memory or disk allocation fails. */
 bool
-inode_create (block_sector_t sector, off_t length)
+inode_create (block_sector_t sector, off_t length, bool is_dir)
 {
   struct inode_disk *disk_inode = NULL;
   bool success = false;
@@ -84,20 +91,12 @@ inode_create (block_sector_t sector, off_t length)
   disk_inode = calloc (1, sizeof *disk_inode);
   if (disk_inode != NULL)
     {
-      size_t sectors = bytes_to_sectors (length);
       disk_inode->length = length;
+      disk_inode->is_dir = is_dir;
       disk_inode->magic = INODE_MAGIC;
-      if (free_map_allocate (sectors, &disk_inode->start)) 
+      if (inode_reserve(disk_inode, length)) 
         {
           block_write (fs_device, sector, disk_inode);
-          if (sectors > 0) 
-            {
-              static char zeros[BLOCK_SECTOR_SIZE];
-              size_t i;
-              
-              for (i = 0; i < sectors; i++) 
-                block_write (fs_device, disk_inode->start + i, zeros);
-            }
           success = true; 
         } 
       free (disk_inode);
@@ -265,6 +264,15 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   if (inode->deny_write_cnt)
     return 0;
 
+  if(byte_to_sector(inode, offset + size - 1) == -1) {
+    // need to extend inode
+    if(!inode_reserve(&inode->data, offset + size)) {
+      return 0;
+    }
+    inode->data.length = offset + size;
+    block_write(fs_device, inode->sector, &inode->data);
+  }
+
   while (size > 0) 
     {
       /* Sector to write, starting byte offset within sector. */
@@ -342,4 +350,74 @@ off_t
 inode_length (const struct inode *inode)
 {
   return inode->data.length;
+}
+
+static bool inode_reserve(struct inode_disk *disk_inode, off_t length) {
+  if(length < 0) return false;
+  // initialize to zero
+  size_t sectors = bytes_to_sectors(length);
+
+  // allocate direct blocks
+  size_t direct_sectors_to_reserve = min(sectors, DIRECT_BLOCKS);
+  for(size_t i = 0; i < direct_sectors_to_reserve; i++) {
+    ASSERT (inode_reserve_aux(&disk_inode->direct_blocks[i], 1, 0));
+  }
+  sectors -= direct_sectors_to_reserve;
+  if(sectors == 0) return true;
+
+  // allocate indirect block
+  size_t indirect_sectors_to_reserve = min(sectors, INDIRECT_BLOCKS);
+  // reserve indirect block
+  if(!inode_reserve_aux(&disk_inode->indirect_block, indirect_sectors_to_reserve, 1)) {
+    return false;
+  }
+  sectors -= indirect_sectors_to_reserve;
+  if(sectors == 0) return true;
+
+  // allocate double indirect block
+  size_t double_indirect_sectors_to_reserve = min(sectors, INDIRECT_BLOCKS * INDIRECT_BLOCKS);
+  // something here
+  if(!inode_reserve_aux(&disk_inode->double_ind_block, double_indirect_sectors_to_reserve, 2)) {
+    return false;
+  }
+  sectors -= double_indirect_sectors_to_reserve;
+  if(sectors == 0) return true;
+
+  ASSERT(sectors == 0);
+  return false;
+}
+
+static bool inode_reserve_aux(block_sector_t *block, size_t num_sectors, size_t level) {
+  // level 0: direct blocks
+  // level 1: indirect blocks
+  // level 2: double indirect blocks
+  static char zeros[BLOCK_SECTOR_SIZE];
+  if(level == 0) {
+    if(*block == 0) {
+      if (!free_map_allocate(1, block)) return false;
+      block_write(fs_device, *block, zeros);
+    }
+    return true;
+  } else if(level == 1 || level == 2) {
+    if(*block == 0) {
+      if (!free_map_allocate(1, block)) return false;
+      block_write(fs_device, *block, zeros);
+    }
+    block_sector_t indirect_blocks[INDIRECT_BLOCKS];
+
+    size_t step = (level == 1) ? 1 : INDIRECT_BLOCKS;
+    size_t blocks_needed = DIV_ROUND_UP(num_sectors, step);
+
+    for(size_t i = 0; i < blocks_needed; i++) {
+      size_t to_allocate = min(num_sectors, step);
+      if(!inode_reserve_aux(&indirect_blocks[i], to_allocate, level - 1)) return false;
+      num_sectors -= to_allocate;
+    }
+    ASSERT(num_sectors == 0);
+    block_write(fs_device, *block, indirect_blocks);
+    return true;
+  } else {
+    PANIC("Invalid level %zu in inode_reserve_aux", level);
+  }
+  return false;
 }
