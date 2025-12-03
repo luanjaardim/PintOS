@@ -146,7 +146,7 @@ syscall_handler (struct intr_frame *f)
 bool create_syscall(const char *file, unsigned initial_size) {
   is_user_loc(file);
   lock_acquire(&filesys_lock);
-  bool created = filesys_create(file, initial_size);
+  bool created = filesys_create(file, initial_size, false);
   lock_release(&filesys_lock);
   return created;
 }
