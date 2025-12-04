@@ -472,6 +472,7 @@ init_thread (struct thread *t, const char *name, int priority)
     t->pagedir = NULL;
     t->pd = NULL;
   #endif
+  t->working_dir = NULL;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

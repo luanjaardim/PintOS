@@ -139,6 +139,7 @@ syscall_handler (struct intr_frame *f)
     }
   default:
     printf("syscall: %d, not implemented yet\n", sys_code);
+    exit_syscall(-1);
     break;
   }
 }

@@ -118,6 +118,7 @@ struct thread
     struct process_defs *pd;
     uint32_t *pagedir;                  /* Page directory. */
 #endif
+   struct dir *working_dir;        /* Current working directory. */
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */

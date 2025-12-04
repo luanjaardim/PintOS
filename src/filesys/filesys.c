@@ -11,6 +11,22 @@
 struct block *fs_device;
 
 static void do_format (void);
+void split_path(const char *name, char *dir_name, char *file_name) {
+  int len = strlen(name);
+  // Separate directory path and file name
+  for(int i = len - 1; i >= 0; i--) {
+    if(name[i] == '/') {
+      memcpy(dir_name, name, i);
+      dir_name[i] = '\0';
+      memcpy(file_name, name + i + 1, len - i);
+      break;
+    }
+    if(i == 0) {
+      memcpy(file_name, name, len + 1);
+      dir_name[0] = '\0';
+    }
+  }
+}
 
 /* Initializes the file system module.
    If FORMAT is true, reformats the file system. */
@@ -46,11 +62,16 @@ bool
 filesys_create (const char *name, off_t initial_size, bool is_dir)
 {
   block_sector_t inode_sector = 0;
-  struct dir *dir = dir_open_root ();
+  int len = strlen(name);
+  char dir_name[len + 1];
+  char file_name[len + 1];
+  split_path(name, dir_name, file_name);
+  struct dir *dir = dir_open_rec(dir_name);
+
   bool success = (dir != NULL
                   && free_map_allocate (1, &inode_sector)
                   && inode_create (inode_sector, initial_size, is_dir)
-                  && dir_add (dir, name, inode_sector));
+                  && dir_add (dir, file_name, inode_sector));
   if (!success && inode_sector != 0) 
     free_map_release (inode_sector, 1);
   dir_close (dir);
@@ -66,12 +87,23 @@ filesys_create (const char *name, off_t initial_size, bool is_dir)
 struct file *
 filesys_open (const char *name)
 {
-  struct dir *dir = dir_open_root ();
   struct inode *inode = NULL;
+  int len = strlen(name);
+  char dir_name[len + 1];
+  char file_name[len + 1];
+  split_path(name, dir_name, file_name);
+  printf("Opening file: dir='%s' file='%s'\n", dir_name, file_name);
+  struct dir *dir = dir_open_rec(dir_name);
+  if(dir == NULL) return NULL;
 
-  if (dir != NULL)
-    dir_lookup (dir, name, &inode);
-  dir_close (dir);
+  if(strlen(file_name) == 0) {
+    inode = dir_get_inode(dir);
+  } else {
+    dir_lookup (dir, file_name, &inode);
+    dir_close (dir);
+  }
+  // TODO: check for removed inodes
+  if(inode == NULL) return NULL;
 
   return file_open (inode);
 }
@@ -83,8 +115,12 @@ filesys_open (const char *name)
 bool
 filesys_remove (const char *name) 
 {
-  struct dir *dir = dir_open_root ();
-  bool success = dir != NULL && dir_remove (dir, name);
+  int len = strlen(name);
+  char dir_name[len + 1];
+  char file_name[len + 1];
+  split_path(name, dir_name, file_name);
+  struct dir *dir = dir_open_rec(dir_name);
+  bool success = dir != NULL && dir_remove (dir, file_name);
   dir_close (dir); 
 
   return success;

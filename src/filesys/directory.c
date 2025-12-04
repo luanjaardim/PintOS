@@ -5,6 +5,7 @@
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
 #include "threads/malloc.h"
+#include "threads/thread.h"
 
 /* A directory. */
 struct dir 
@@ -27,6 +28,47 @@ bool
 dir_create (block_sector_t sector, size_t entry_cnt)
 {
   return inode_create (sector, entry_cnt * sizeof (struct dir_entry), true);
+}
+
+struct dir *dir_open_rec(const char *dirname) {
+  int len = strlen(dirname);
+  char copy[len + 1];
+  memcpy(copy, dirname, len + 1);
+
+  struct dir *current_dir;
+  if(dirname[0] == '/') {
+    current_dir = dir_open_root();
+  } else {
+    struct thread *t = thread_current();
+    // relative directory
+    if(t->working_dir != NULL) { 
+      current_dir = dir_reopen(t->working_dir);
+      printf("im here\n");
+    }
+    else {
+      current_dir = dir_open_root();
+      printf("im there\n");
+    }
+  }
+
+  char *token, *save_ptr;
+  token = strtok_r(copy, "/", &save_ptr);
+  while(token != NULL) {
+    struct inode *inode = NULL;
+    printf("Looking up token: %s\n", token);
+    if(!dir_lookup(current_dir, token, &inode)) {
+      dir_close(current_dir);
+      return NULL;
+    }
+    struct dir *next_dir = dir_open(inode);
+    dir_close(current_dir);
+    if(next_dir == NULL) {
+      return NULL;
+    }
+    current_dir = next_dir;
+    token = strtok_r(NULL, "/", &save_ptr);
+  }
+  return current_dir;
 }
 
 /* Opens and returns the directory for the given INODE, of which

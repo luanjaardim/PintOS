@@ -80,8 +80,13 @@ process_execute (const char *file_name)
     list_init(&cur->pd->children);
     cur->pd->exited = false;
     cur->pd->file_executing = NULL;
-  }
+  } 
   list_push_back(&cur->pd->children, &pd->e);
+  // if it has a parent, inherit its working directory
+  if(cur->pd != NULL && cur->pd->parent != NULL)
+    cur->working_dir = dir_reopen(cur->pd->parent->working_dir);
+  else
+    cur->working_dir = dir_open_root();
 
   return tid;
 }
@@ -176,6 +181,8 @@ process_exit (void)
     elem = list_next(elem);
     free(fd);
   }
+
+  if(t->working_dir != NULL) dir_close(t->working_dir);
 
   // exit and let the children and orphan
   for (elem = list_begin (&t->pd->children); elem != list_end (&t->pd->children);
