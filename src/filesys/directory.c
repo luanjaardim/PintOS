@@ -27,7 +27,38 @@ struct dir_entry
 bool
 dir_create (block_sector_t sector, size_t entry_cnt)
 {
-  return inode_create (sector, entry_cnt * sizeof (struct dir_entry), true);
+  bool success = inode_create (sector, entry_cnt * sizeof (struct dir_entry), true);
+  if(!success) return false;
+
+  struct dir *dir = dir_open (inode_open (sector));
+  ASSERT(dir != NULL);
+
+  // add "." and ".." entries
+  struct dir_entry self_entry;
+  self_entry.inode_sector = sector;
+  memcpy(self_entry.name, ".", 2);
+  self_entry.in_use = true;
+  if(inode_write_at(dir->inode, &self_entry, sizeof(self_entry), 0) != sizeof(self_entry)) {
+    dir_close(dir);
+    return false;
+  }
+
+  struct thread *cur = thread_current();
+  struct dir_entry parent_entry;
+  memcpy(parent_entry.name, "..", 3);
+  parent_entry.in_use = true;
+  if(cur->working_dir != NULL) {
+    parent_entry.inode_sector = inode_get_inumber(dir_get_inode(cur->working_dir));
+  } else {
+    parent_entry.inode_sector = ROOT_DIR_SECTOR;
+  }
+  if(inode_write_at(dir->inode, &parent_entry, sizeof(parent_entry), sizeof(self_entry)) != sizeof(parent_entry)) {
+    dir_close(dir);
+    return false;
+  }
+
+  dir_close(dir);
+  return success;
 }
 
 struct dir *dir_open_rec(const char *dirname) {
@@ -41,21 +72,16 @@ struct dir *dir_open_rec(const char *dirname) {
   } else {
     struct thread *t = thread_current();
     // relative directory
-    if(t->working_dir != NULL) { 
+    if(t->working_dir != NULL)
       current_dir = dir_reopen(t->working_dir);
-      printf("im here\n");
-    }
-    else {
+    else
       current_dir = dir_open_root();
-      printf("im there\n");
-    }
   }
 
   char *token, *save_ptr;
   token = strtok_r(copy, "/", &save_ptr);
   while(token != NULL) {
     struct inode *inode = NULL;
-    printf("Looking up token: %s\n", token);
     if(!dir_lookup(current_dir, token, &inode)) {
       dir_close(current_dir);
       return NULL;

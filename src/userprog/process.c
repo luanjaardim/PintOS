@@ -73,6 +73,12 @@ process_execute (const char *file_name)
   }
 
   struct thread *cur = thread_current();
+  // if it has a parent, inherit its working directory
+  if(cur->pd != NULL)
+    cur->working_dir = dir_reopen(cur->pd->parent->working_dir);
+  else
+    cur->working_dir = dir_open_root();
+
   // For threads that were created with the process_execute function
   if(cur->pd == NULL) {
     cur->pd = palloc_get_page(0);
@@ -82,11 +88,6 @@ process_execute (const char *file_name)
     cur->pd->file_executing = NULL;
   } 
   list_push_back(&cur->pd->children, &pd->e);
-  // if it has a parent, inherit its working directory
-  if(cur->pd != NULL && cur->pd->parent != NULL)
-    cur->working_dir = dir_reopen(cur->pd->parent->working_dir);
-  else
-    cur->working_dir = dir_open_root();
 
   return tid;
 }

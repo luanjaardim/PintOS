@@ -92,7 +92,6 @@ filesys_open (const char *name)
   char dir_name[len + 1];
   char file_name[len + 1];
   split_path(name, dir_name, file_name);
-  printf("Opening file: dir='%s' file='%s'\n", dir_name, file_name);
   struct dir *dir = dir_open_rec(dir_name);
   if(dir == NULL) return NULL;
 
