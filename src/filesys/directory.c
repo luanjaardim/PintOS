@@ -94,6 +94,12 @@ struct dir *dir_open_rec(const char *dirname) {
     current_dir = next_dir;
     token = strtok_r(NULL, "/", &save_ptr);
   }
+  // check if the directory was removed
+  if(inode_is_removed(current_dir->inode)) {
+    dir_close(current_dir);
+    return NULL;
+  }
+
   return current_dir;
 }
 
@@ -269,6 +275,14 @@ dir_remove (struct dir *dir, const char *name)
   if (inode == NULL)
     goto done;
 
+  if(inode_is_dir(inode)) {
+    // check if directory is empty
+    struct dir *target_dir = dir_open(inode);
+    bool is_empty = dir_is_empty(target_dir);
+    dir_close(target_dir);
+    if(!is_empty) goto done;
+  }
+
   /* Erase directory entry. */
   e.in_use = false;
   if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e) 
@@ -283,6 +297,19 @@ dir_remove (struct dir *dir, const char *name)
   return success;
 }
 
+bool dir_is_empty(const struct dir* dir) {
+  off_t ofs;
+  struct dir_entry e;
+  for (ofs = 2 * sizeof(e); inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
+       ofs += sizeof e)
+    {
+      if (e.in_use)
+        return false;
+    }
+  return true;
+}
+
+
 /* Reads the next directory entry in DIR and stores the name in
    NAME.  Returns true if successful, false if the directory
    contains no more entries. */
@@ -291,6 +318,8 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
 {
   struct dir_entry e;
 
+  if(dir->pos < 2 * sizeof(e))
+    dir->pos = 2 * sizeof(e);
   while (inode_read_at (dir->inode, &e, sizeof e, dir->pos) == sizeof e) 
     {
       dir->pos += sizeof e;

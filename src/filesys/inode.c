@@ -369,6 +369,14 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   return bytes_written;
 }
 
+bool inode_is_dir(const struct inode *inode) {
+  return inode->data.is_dir;
+}
+
+bool inode_is_removed(const struct inode *inode) {
+  return inode->removed;
+}
+
 /* Disables writes to INODE.
    May be called at most once per inode opener. */
 void

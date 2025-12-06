@@ -10,6 +10,7 @@
 #include "threads/malloc.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "filesys/inode.h"
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
 #include "userprog/syscall.h"
@@ -25,6 +26,11 @@ int filesize_syscall(int fd);
 void seek_syscall(int fd, unsigned position);
 unsigned tell_syscall(int fd);
 tid_t exec_syscall(const char *command_line_arguments);
+bool chdir_syscall(const char *dir);
+bool mkdir_syscall(const char *dir);
+bool readdir_syscall(int fd, char *name);
+bool isdir_syscall(int fd);
+int inumber_syscall(int fd);
 struct file_desc *get_file_desc(struct thread *t, int id);
 static int read_from_user (void *src, void *dst, size_t bytes);
 static bool put_user (uint8_t *udst, uint8_t byte);
@@ -137,6 +143,38 @@ syscall_handler (struct intr_frame *f)
       f->eax = exec_syscall(cmd_parameters);
       break;
     }
+
+  case SYS_CHDIR:                  /* Change the current directory. */
+  case SYS_MKDIR:                  /* Create a directory. */
+    {
+      char *dir;
+      read_from_user(f->esp + 4, &dir, sizeof(dir));
+      f->eax = (sys_code == SYS_CHDIR) ? chdir_syscall(dir) : mkdir_syscall(dir);
+      break;
+    }
+    case SYS_READDIR:                /* Reads a directory entry. */
+    {
+      int fd;
+      char *name;
+      read_from_user(f->esp + 4, &fd, sizeof(int));
+      read_from_user(f->esp + 8, &name, sizeof(name));
+      f->eax = readdir_syscall(fd, name);
+      break;
+    }
+    case SYS_ISDIR:                  /* Tests if a fd represents a directory. */
+    {
+      int fd;
+      read_from_user(f->esp + 4, &fd, sizeof(int));
+      f->eax = isdir_syscall(fd);
+      break;
+    }
+    case SYS_INUMBER:                 /* Returns the inode number for a fd. */
+    {
+      int fd;
+      read_from_user(f->esp + 4, &fd, sizeof(int));
+      f->eax = inumber_syscall(fd);
+      break;
+    }
   default:
     printf("syscall: %d, not implemented yet\n", sys_code);
     exit_syscall(-1);
@@ -207,6 +245,7 @@ int write_syscall(int fd, void *buffer, uint32_t size) {
   } else {
     struct file_desc *desc =  get_file_desc(thread_current(), fd);
     if(desc && desc->f) {
+      if(inode_is_dir(file_get_inode(desc->f))) return -1;
       lock_acquire(&filesys_lock);
       len = file_write(desc->f, buffer, size);
       lock_release(&filesys_lock);
@@ -266,6 +305,62 @@ tid_t exec_syscall(const char *command_line_arguments) {
   is_user_loc(command_line_arguments);
   tid = process_execute(command_line_arguments);
   return tid;
+}
+
+bool chdir_syscall(const char *dir) {
+  is_user_loc(dir);
+
+  lock_acquire(&filesys_lock);
+  bool success = filesys_chdir(dir);
+  lock_release(&filesys_lock);
+  return success;
+}
+
+bool mkdir_syscall(const char *dir) {
+  is_user_loc(dir);
+
+  lock_acquire(&filesys_lock);
+  bool success = filesys_create(dir, 16, true);
+  lock_release(&filesys_lock);
+  return success;
+}
+
+bool readdir_syscall(int fd, char *name) {
+  is_user_loc(name);
+  bool success = false;
+
+  lock_acquire(&filesys_lock);
+  struct file_desc *desc = get_file_desc(thread_current(), fd);
+  if(desc == NULL) goto done;
+
+  struct inode *inode = file_get_inode(desc->f);
+  if(inode == NULL) goto done;
+  if(!inode_is_dir(inode)) goto done;
+
+  struct dir *dir = dir_open(inode);
+  if(dir == NULL) goto done;
+  success = dir_readdir(dir, name);
+  dir_close(dir);
+
+  done:
+  lock_release(&filesys_lock);
+  return success;
+}
+
+bool isdir_syscall(int fd) {
+  struct file_desc *desc = get_file_desc(thread_current(), fd);
+  if(desc == NULL) return false;
+  struct inode *inode = file_get_inode(desc->f);
+  if(inode == NULL) return false;
+  return inode_is_dir(inode);
+}
+
+int inumber_syscall(int fd) {
+  struct file_desc *desc = get_file_desc(thread_current(), fd);
+  if(desc == NULL) return -1;
+  struct inode *inode = file_get_inode(desc->f);
+  if(inode == NULL) return -1;
+  return inode_get_inumber(inode);
 }
 
 // TODO: if exit with a thread we need to release the locks its holding

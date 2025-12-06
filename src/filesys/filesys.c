@@ -6,6 +6,7 @@
 #include "filesys/free-map.h"
 #include "filesys/inode.h"
 #include "filesys/directory.h"
+#include "threads/thread.h"
 
 /* Partition that contains the file system. */
 struct block *fs_device;
@@ -16,8 +17,8 @@ void split_path(const char *name, char *dir_name, char *file_name) {
   // Separate directory path and file name
   for(int i = len - 1; i >= 0; i--) {
     if(name[i] == '/') {
-      memcpy(dir_name, name, i);
-      dir_name[i] = '\0';
+      memcpy(dir_name, name, i+1);
+      dir_name[i+1] = '\0';
       memcpy(file_name, name + i + 1, len - i);
       break;
     }
@@ -63,6 +64,7 @@ filesys_create (const char *name, off_t initial_size, bool is_dir)
 {
   block_sector_t inode_sector = 0;
   int len = strlen(name);
+  if(len == 0) return false;
   char dir_name[len + 1];
   char file_name[len + 1];
   split_path(name, dir_name, file_name);
@@ -70,7 +72,8 @@ filesys_create (const char *name, off_t initial_size, bool is_dir)
 
   bool success = (dir != NULL
                   && free_map_allocate (1, &inode_sector)
-                  && inode_create (inode_sector, initial_size, is_dir)
+                  && (is_dir ? dir_create (inode_sector, 16)
+                             : inode_create (inode_sector, initial_size, false))
                   && dir_add (dir, file_name, inode_sector));
   if (!success && inode_sector != 0) 
     free_map_release (inode_sector, 1);
@@ -124,6 +127,20 @@ filesys_remove (const char *name)
 
   return success;
 }
+
+bool filesys_chdir(const char *dir) {
+  struct dir *target_dir = dir_open_rec(dir);
+  if(target_dir == NULL) {
+    return false;
+  }
+  struct thread *t = thread_current();
+  if(t->working_dir != NULL) {
+    dir_close(t->working_dir);
+  }
+  t->working_dir = target_dir;
+  return true;
+}
+
 
 /* Formats the file system. */
 static void
