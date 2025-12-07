@@ -11,6 +11,7 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "filesys/inode.h"
+#include "filesys/directory.h"
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
 #include "userprog/syscall.h"
@@ -334,13 +335,21 @@ bool readdir_syscall(int fd, char *name) {
   if(desc == NULL) goto done;
 
   struct inode *inode = file_get_inode(desc->f);
+  block_sector_t inumber_sector = inode_get_inumber(inode);
   if(inode == NULL) goto done;
   if(!inode_is_dir(inode)) goto done;
 
-  struct dir *dir = dir_open(inode);
+  struct dir *dir = dir_open(inode_open(inumber_sector));
   if(dir == NULL) goto done;
-  success = dir_readdir(dir, name);
+
+  size_t pos = file_tell(desc->f);
+  dir_seek(dir, pos);
+  if(!dir_readdir(dir, name)) goto done;
+
+  pos = dir_tell(dir);
+  file_seek(desc->f, pos);
   dir_close(dir);
+  success = true;
 
   done:
   lock_release(&filesys_lock);

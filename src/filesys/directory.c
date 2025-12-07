@@ -173,7 +173,7 @@ lookup (const struct dir *dir, const char *name,
   ASSERT (name != NULL);
 
   for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
-       ofs += sizeof e) 
+       ofs += sizeof e) {
     if (e.in_use && !strcmp (name, e.name)) 
       {
         if (ep != NULL)
@@ -182,6 +182,7 @@ lookup (const struct dir *dir, const char *name,
           *ofsp = ofs;
         return true;
       }
+  }
   return false;
 }
 
@@ -309,6 +310,15 @@ bool dir_is_empty(const struct dir* dir) {
   return true;
 }
 
+size_t dir_tell(struct dir *dir) {
+  return dir->pos;
+}
+
+void dir_seek(struct dir *dir, size_t new_pos) {
+  ASSERT(dir != NULL);
+  ASSERT(new_pos >= 0);
+  dir->pos = new_pos;
+};
 
 /* Reads the next directory entry in DIR and stores the name in
    NAME.  Returns true if successful, false if the directory

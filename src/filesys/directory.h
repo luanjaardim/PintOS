@@ -22,6 +22,8 @@ struct dir *dir_open_rec(const char *dirname);
 void dir_close (struct dir *);
 struct inode *dir_get_inode (struct dir *);
 bool dir_is_empty(const struct dir* dir);
+size_t dir_tell(struct dir *dir);
+void dir_seek(struct dir *dir, size_t new_pos);
 
 /* Reading and writing. */
 bool dir_lookup (const struct dir *, const char *name, struct inode **);

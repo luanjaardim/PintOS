@@ -412,7 +412,7 @@ static bool inode_reserve(struct inode_disk *disk_inode, off_t length) {
   // allocate direct blocks
   size_t direct_sectors_to_reserve = min(sectors, DIRECT_BLOCKS);
   for(size_t i = 0; i < direct_sectors_to_reserve; i++) {
-    ASSERT (inode_reserve_aux(&disk_inode->direct_blocks[i], 1, 0));
+    if (!inode_reserve_aux(&disk_inode->direct_blocks[i], 1, 0)) return false;
   }
   sectors -= direct_sectors_to_reserve;
   if(sectors == 0) return true;

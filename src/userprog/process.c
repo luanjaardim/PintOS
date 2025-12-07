@@ -20,6 +20,7 @@
 #include "devices/timer.h"
 #include "lib/kernel/list.h"
 #include "threads/synch.h"
+#include "filesys/inode.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -47,6 +48,17 @@ process_execute (const char *file_name)
   memcpy(thread_name, file_name, len);
   thread_name[len] = 0;
 
+  struct thread *cur = thread_current();
+  // if it has a parent, inherit its working directory
+  if(cur->working_dir == NULL) {
+    if(cur->pd != NULL) {
+      cur->working_dir = dir_reopen(cur->pd->parent->working_dir);
+    }
+    else {
+      cur->working_dir = dir_open_root();
+    }
+  }
+
   struct process_defs *pd = palloc_get_page(0);
   pd->tid = -1;
   pd->parent = thread_current();
@@ -54,6 +66,7 @@ process_execute (const char *file_name)
   pd->exited = false;
   pd->exit_code = 0;
   pd->file_executing = NULL;
+  pd->cwd = dir_reopen(cur->working_dir);
   list_init(&pd->children);
   list_init(&pd->file_descriptors);
   sema_init(&pd->initializing, 0);
@@ -71,13 +84,6 @@ process_execute (const char *file_name)
     palloc_free_page(pd);
     return TID_ERROR;
   }
-
-  struct thread *cur = thread_current();
-  // if it has a parent, inherit its working directory
-  if(cur->pd != NULL)
-    cur->working_dir = dir_reopen(cur->pd->parent->working_dir);
-  else
-    cur->working_dir = dir_open_root();
 
   // For threads that were created with the process_execute function
   if(cur->pd == NULL) {
@@ -102,6 +108,7 @@ start_process (void *arg_)
   bool success;
   struct thread *cur = thread_current();
   cur->pd = arg;
+  cur->working_dir = cur->pd->cwd;
   const char *cmd_line = arg->cmd_line;
 
   /* Initialize interrupt frame and load executable. */
