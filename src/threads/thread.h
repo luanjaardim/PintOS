@@ -99,6 +99,7 @@ struct process_defs {
    tid_t tid;
    int exit_code;
    struct file *file_executing;
+   struct list mmap_list;
 };
 #endif
 

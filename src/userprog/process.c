@@ -57,6 +57,7 @@ process_execute (const char *file_name)
   pd->file_executing = NULL;
   list_init(&pd->children);
   list_init(&pd->file_descriptors);
+  list_init(&pd->mmap_list);
   sema_init(&pd->initializing, 0);
   sema_init(&pd->wait_for, 0);
 
@@ -517,7 +518,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
 
       /* Add the page to the process's address space. */
-      if (!insert_page_on_table (upage, kpage, writable)) 
+      if (!insert_page_on_table (upage, kpage, writable, true))
         {
           palloc_free_page (kpage);
           return false; 
@@ -542,7 +543,7 @@ setup_stack (const char *cmd_args, void **esp)
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
     {
-      success = insert_page_on_table(((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+      success = insert_page_on_table(((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true, true);
       if (success)
         *esp = PHYS_BASE;
       else

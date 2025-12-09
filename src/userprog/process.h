@@ -4,6 +4,16 @@
 #include "threads/thread.h"
 #include "filesys/file.h"
 
+typedef size_t mmapid_t;
+
+struct mmap_desc {
+    mmapid_t id;
+    struct list_elem e;
+    struct file *f;
+    void *upage;
+    size_t length;
+};
+
 struct file_desc {
     uint32_t id;
     struct list_elem e;

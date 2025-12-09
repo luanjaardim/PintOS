@@ -18,7 +18,7 @@ struct frame_table_entry *get_entry(void *page) {
   else return NULL;
 }
 
-bool insert_page_on_table(void *upage, void *kpage, bool writable) {
+bool insert_page_on_table(void *upage, void *kpage, bool writable, bool also_supt) {
     if(upage == NULL || kpage == NULL) return false;
     struct frame_table_entry *elem = malloc(sizeof(struct frame_table_entry));
     struct sup_page_table_entry *elem_sup = malloc(sizeof(struct sup_page_table_entry));
@@ -40,7 +40,10 @@ bool insert_page_on_table(void *upage, void *kpage, bool writable) {
     // Insert on frame table map
     hash_insert(&frame_table, &elem->e);
     // Insert on sup frame table of the thread
-    hash_insert(&elem->owner->sup_pg_t, &elem_sup->e);
+    if(also_supt)
+      hash_insert(&elem->owner->sup_pg_t, &elem_sup->e);
+    else
+      free(elem_sup);
     // Install page to pagedir
     if(!install_page(upage, kpage, writable)) {
       lock_release(&frame_lock);
@@ -103,7 +106,7 @@ void load_from_swap_again(struct hash *table, void *upage) {
   take_from_swap(new_page, sp->swap_index);
   // TODO: change here to true
   remove_from_supt_table(table, upage, true); // remove to insert again below
-  bool success = insert_page_on_table(upage, new_page, true);
+  bool success = insert_page_on_table(upage, new_page, true, true);
   ASSERT(success);
 }
 

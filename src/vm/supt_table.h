@@ -16,6 +16,7 @@
 enum pg_stats {
     OWNED,
     EVICTED, // on swap
+    MMAPED,
 };
 
 struct sup_page_table_entry {
@@ -27,10 +28,15 @@ struct sup_page_table_entry {
     bool dirty;
     bool accessed;
 
+    //filesys info
+    struct file *f;
+    size_t offset, to_read, padding;
+
     struct hash_elem e;
 };
 
 struct sup_page_table_entry *sup_get_entry(const struct hash *h, void *page);
+bool filesys_add_to_supt_table(const struct hash *table, void *upage, struct file *f, size_t offset, size_t to_read, size_t padding);
 void *remove_from_supt_table(const struct hash *h, void *upage, bool remove_from_pagedir);
 void evict_frame(struct sup_page_table_entry *spt);
 

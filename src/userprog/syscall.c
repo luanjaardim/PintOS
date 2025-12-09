@@ -14,6 +14,7 @@
 #include "userprog/pagedir.h"
 #include "userprog/syscall.h"
 #include "vm/supt_table.h"
+#include "userprog/process.h"
 
 static void syscall_handler (struct intr_frame *);
 bool create_syscall(const char *file, unsigned initial_size);
@@ -26,7 +27,10 @@ int filesize_syscall(int fd);
 void seek_syscall(int fd, unsigned position);
 unsigned tell_syscall(int fd);
 tid_t exec_syscall(const char *command_line_arguments);
+mmapid_t mmap_syscall(int fd, void *upage);
+bool munmap_syscall(mmapid_t mid);
 struct file_desc *get_file_desc(struct thread *t, int id);
+struct mmap_desc *get_mmap_desc(struct thread *t, int mid);
 static int read_from_user (void *src, void *dst, size_t bytes);
 static bool put_user (uint8_t *udst, uint8_t byte);
 static int32_t get_user (const uint8_t *uaddr);
@@ -138,6 +142,23 @@ syscall_handler (struct intr_frame *f)
       f->eax = exec_syscall(cmd_parameters);
       break;
     }
+  case SYS_MMAP:
+    {
+      int fd;
+      void *addr;
+      read_from_user(f->esp + 4, &fd, sizeof(fd));
+      read_from_user(f->esp + 8, &addr, sizeof(addr));
+      f->eax = mmap_syscall(fd, addr);
+      break;
+    }
+  case SYS_MUNMAP:
+    {
+
+      mmapid_t mid;
+      read_from_user(f->esp + 4, &mid, sizeof(mid));
+      f->eax = munmap_syscall(mid);
+      break;
+    }
   default:
     printf("syscall: %d, not implemented yet\n", sys_code);
     break;
@@ -169,7 +190,6 @@ int open_syscall(const char *file) {
   lock_acquire(&filesys_lock);
   struct file *f = filesys_open(file);
   if(f == NULL) {
-    printf("File '%s' was not found \n", file);
     lock_release(&filesys_lock);
     return -1;
   }
@@ -269,6 +289,78 @@ unsigned tell_syscall(int fd) {
   return pos;
 }
 
+mmapid_t mmap_syscall(int fd, void *upage) {
+  if(upage == NULL) return -1;
+  if(fd <= 2) return -1;
+
+  struct thread *t = thread_current();
+  ASSERT(t->pd != NULL);
+  lock_acquire(&filesys_lock);
+
+  struct file *f = NULL;
+  struct file_desc* desc = get_file_desc(t, fd);
+  if(desc != NULL && desc->f != NULL) {
+    f = file_reopen(desc->f);
+  }
+  if(f == NULL) goto FAIL;
+
+  size_t length = file_length(f);
+  if(length == 0) goto FAIL;
+
+  size_t offset;
+  void *addr = upage;
+  for(offset=0; offset < length; offset += PGSIZE) {
+    size_t to_read = (offset + PGSIZE < length ? PGSIZE : length - offset);
+    size_t padding = PGSIZE - to_read;
+    addr += offset;
+    filesys_add_to_supt_table(&t->sup_pg_t, addr, f, offset, to_read, padding);
+  }
+
+  mmapid_t mid;
+  if(!list_empty(&t->pd->mmap_list))
+    mid = list_entry(list_back(&t->pd->mmap_list), struct mmap_desc, e)->id + 1;
+  else
+    mid = 0;
+
+  struct mmap_desc *md = malloc(sizeof(struct mmap_desc));
+  md->id = mid;
+  md->f = f;
+  md->length = length;
+  md->upage = upage;
+  list_push_back(&t->pd->mmap_list, &md->e);
+  lock_release(&filesys_lock);
+  return mid;
+
+  FAIL:
+  lock_release(&filesys_lock);
+  return -1;
+}
+
+bool munmap_syscall(mmapid_t mid) {
+  lock_acquire(&filesys_lock);
+  struct mmap_desc *md = get_mmap_desc(thread_current(), mid);
+  if(md == NULL) {
+    lock_release(&filesys_lock);
+    return false;
+  }
+
+  size_t offset;
+  void *addr = md->upage;
+  struct thread *t = thread_current();
+  for(offset=0; offset < md->length; offset += PGSIZE) {
+    size_t to_read = (offset + PGSIZE < md->length ? PGSIZE : md->length - offset);
+    size_t padding = PGSIZE - to_read;
+    addr += offset;
+    struct sup_page_table_entry *sp = sup_get_entry(&t->sup_pg_t, addr);
+    if(sp->kpage != NULL)
+      remove_from_frame_table(sp->kpage);
+    remove_from_supt_table(&t->sup_pg_t, addr, true);
+  }
+
+  lock_release(&filesys_lock);
+  return true;
+}
+
 tid_t exec_syscall(const char *command_line_arguments) {
   tid_t tid;
   is_user_loc(command_line_arguments);
@@ -283,6 +375,19 @@ void exit_syscall(uint32_t code) {
   if(t->pd)
     t->pd->exit_code = code;
   thread_exit();
+}
+
+struct mmap_desc *get_mmap_desc(struct thread *t, int mid) {
+  struct list_elem *elem;
+  for (elem = list_begin (&t->pd->mmap_list); elem != list_end (&t->pd->mmap_list);
+       elem = list_next (elem))
+      {
+        struct mmap_desc *md = list_entry(elem, struct mmap_desc, e);
+        if(md && md->id == (unsigned int)mid) {
+          return md;
+        }
+      }
+  return NULL;
 }
 
 struct file_desc *get_file_desc(struct thread *t, int id) {

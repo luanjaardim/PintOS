@@ -179,12 +179,20 @@ page_fault (struct intr_frame *f)
    // It was an evicted page, and so we get it again from swap
    if(sp != NULL) {
       void *old = remove_oldest_kpage();
+      bool success = false;
       switch (sp->status)
       {
       case EVICTED:
          take_from_swap(old, sp->swap_index);
          remove_from_supt_table(&t->sup_pg_t, upage, true); // remove to insert again below
-         bool success = insert_page_on_table(upage, old, true);
+         success = insert_page_on_table(upage, old, true, true);
+         ASSERT(success);
+         return;
+      case MMAPED:
+         take_from_filesys(old, sp);
+         success = insert_page_on_table(upage, old, true, false);
+         sp->kpage = old;
+         sp->access_time = timer_ticks();
          ASSERT(success);
          return;
       default:
@@ -203,7 +211,7 @@ page_fault (struct intr_frame *f)
           void *upage = pg_round_down(fault_addr);
           ASSERT(upage != NULL);
           void *kpage = (void*) palloc_get_page(PAL_USER | PAL_ZERO);
-          bool success = insert_page_on_table(upage, kpage, true);
+          bool success = insert_page_on_table(upage, kpage, true, true);
           ASSERT(success);
           return;
       }

@@ -9,6 +9,25 @@ struct sup_page_table_entry *sup_get_entry(const struct hash *h, void *page) {
   else return NULL;
 }
 
+bool filesys_add_to_supt_table(const struct hash *table, void *upage, struct file *f, size_t offset, size_t to_read, size_t padding) {
+    struct sup_page_table_entry *elem_sup = malloc(sizeof(struct sup_page_table_entry));
+    if(elem_sup == NULL) return false;
+
+    elem_sup->upage = upage;
+    elem_sup->kpage = NULL;
+    elem_sup->f = f;
+    elem_sup->offset = offset;
+    elem_sup->to_read = to_read;
+    elem_sup->padding = padding;
+    elem_sup->status = MMAPED;
+
+    struct hash_elem *prev_elem;
+    prev_elem = hash_insert(table, &elem_sup->e);
+    ASSERT(prev_elem == NULL);
+
+    return true;
+}
+
 // remove a upage from supt_table and returns its kpage
 void *remove_from_supt_table(const struct hash *table, void *upage, bool remove_from_pagedir) {
 
@@ -31,6 +50,14 @@ void evict_frame(struct sup_page_table_entry *spt) {
     spt->swap_index = send_to_swap(spt->kpage);
     spt->kpage = NULL;
     spt->status = EVICTED;
+}
+
+bool take_from_filesys(void *kpage, struct sup_page_table_entry *spt) {
+  file_seek(spt->f, spt->offset);
+
+  if(spt->to_read == file_read(spt->f, kpage, spt->to_read)) return false;
+  memset(kpage + spt->to_read, 0, spt->padding);
+  return true;
 }
 
 unsigned sup_hash_func(const struct hash_elem *elem, void *aux UNUSED)

@@ -28,7 +28,7 @@ struct frame_table_entry {
 };
 
 void frame_table_init();
-bool insert_page_on_table(void *upage, void *kpage, bool writable);
+bool insert_page_on_table(void *upage, void *kpage, bool writable, bool also_supt);
 void *remove_from_frame_table(void *kpage);
 void remove_kpage(void *kpage);
 void *get_oldest_table();
